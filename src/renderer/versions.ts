@@ -1,32 +1,24 @@
-import { InstallState, Installer } from '@electron/fiddle-core';
-import * as fs from 'fs-extra';
-import semver from 'semver';
-
-import releasesJSON from '../../static/releases.json';
+import { normalizeVersion } from './utils/normalize-version';
 import {
   ElectronReleaseChannel,
+  GlobalSetting,
+  InstallState,
   RunnableVersion,
   Version,
   VersionSource,
+  WindowSpecificSetting,
 } from '../interfaces';
-import { normalizeVersion } from '../utils/normalize-version';
 
 /**
  * Returns a sensible default version string.
- *
- * @param {Array<RunnableVersion>} knownVersions
- * @returns {string}
  */
 export function getDefaultVersion(versions: RunnableVersion[]): string {
-  const key = localStorage.getItem('version');
-  if (key && versions.some(({ version }) => version === key)) return key;
+  const key = localStorage.getItem(WindowSpecificSetting.version);
+  if (key && versions.some(({ version }) => version === key)) {
+    return key;
+  }
 
-  // newest stable release
-  const latestStable = versions
-    .filter((ver) => !ver.version.includes('-')) // stable
-    .map((ver) => semver.parse(ver.version))
-    .sort((a, b) => -semver.compare(a!, b!))
-    .shift();
+  const latestStable = window.ElectronFiddle.getLatestStable();
   if (latestStable) return latestStable.version;
 
   // how do we not have a stable version listed?
@@ -36,9 +28,6 @@ export function getDefaultVersion(versions: RunnableVersion[]): string {
 /**
  * Return the release channel for a given input
  * version.
- *
- * @param {Version | string} input
- * @returns {ElectronReleaseChannel}
  */
 export function getReleaseChannel(
   input: Version | string,
@@ -57,88 +46,15 @@ export function getReleaseChannel(
   return ElectronReleaseChannel.stable;
 }
 
-export const enum VersionKeys {
-  local = 'local-electron-versions',
-  known = 'known-electron-versions',
-}
-
-/**
- * Retrieve Electron versions from localStorage.
- *
- * @param {VersionKeys} key
- * @param {() => Array<Version>} fallbackMethod
- * @returns {Array<Version>}
- */
-function getVersions(
-  key: VersionKeys,
-  fallbackMethod: () => Array<Version>,
-): Array<Version> {
-  const fromLs = window.localStorage.getItem(key);
-
-  if (fromLs) {
-    try {
-      let result: Array<Version> = JSON.parse(fromLs);
-
-      if (!isExpectedFormat(result)) {
-        // Known versions can just be downloaded again.
-        if (key === VersionKeys.known) {
-          throw new Error(
-            `Electron versions in LS does not match expected format`,
-          );
-        }
-
-        // Local versions are a bit more tricky and might be in an old format (pre 0.5)
-        result = migrateVersions(result);
-        saveLocalVersions(result);
-      }
-
-      return result;
-    } catch (error) {
-      console.warn(
-        `Parsing local Electron versions failed, returning fallback method.`,
-      );
-    }
-  }
-
-  return fallbackMethod();
-}
-
-/**
- * Save an array of GitHubVersions to localStorage.
- *
- * @param {VersionKeys} key
- * @param {Array<Version} versions
- */
-function saveVersions(key: VersionKeys, versions: Array<Version>) {
-  const stringified = JSON.stringify(versions);
-  window.localStorage.setItem(key, stringified);
-}
-
-/**
- * Gets the current state of a specific version
- * Valid local electron builds are marked as `installed`
- *
- * @param {Version} ver
- * @returns {InstallState}
- */
-export function getVersionState(ver: Version): InstallState {
-  const { localPath } = ver;
-  if (localPath !== undefined) {
-    const dir = Installer.getExecPath(localPath);
-    if (fs.existsSync(dir)) {
-      return InstallState.installed;
-    }
-  }
-
-  return InstallState.missing;
-}
-
 export function makeRunnable(ver: Version): RunnableVersion {
+  // Destructure ver so it's not a Proxy object, which can't be used
   const ret: RunnableVersion = {
     ...ver,
     version: normalizeVersion(ver.version),
     source: Boolean(ver.localPath) ? VersionSource.local : VersionSource.remote,
-    state: getVersionState(ver),
+    state: Boolean(ver.localPath)
+      ? window.ElectronFiddle.getLocalVersionState({ ...ver })
+      : InstallState.missing,
   };
 
   return ret;
@@ -146,8 +62,6 @@ export function makeRunnable(ver: Version): RunnableVersion {
 
 /**
  * Return both known as well as local versions.
- *
- * @returns {Array<RunnableVersion>}
  */
 export function getElectronVersions(): Array<RunnableVersion> {
   const versions = [...getReleasedVersions(), ...getLocalVersions()];
@@ -156,9 +70,6 @@ export function getElectronVersions(): Array<RunnableVersion> {
 
 /**
  * Add a version to the local versions
- *
- * @param {Version} input
- * @returns {Array<Version>}
  */
 export function addLocalVersion(input: Version): Array<Version> {
   const versions = getLocalVersions();
@@ -174,9 +85,6 @@ export function addLocalVersion(input: Version): Array<Version> {
 
 /**
  * Get the Version (if any) that is located at localPath.
- *
- * @param {string} folderPath
- * @returns {Version | undefined}
  */
 export function getLocalVersionForPath(
   folderPath: string,
@@ -186,21 +94,33 @@ export function getLocalVersionForPath(
 
 /**
  * Retrieves local Electron versions, configured by the user.
- *
- * @returns {Array<Version>}
  */
 export function getLocalVersions(): Array<Version> {
-  const versions = getVersions(VersionKeys.local, () => []);
+  const fromLs = window.localStorage.getItem(GlobalSetting.localVersion);
 
-  return versions;
+  if (fromLs) {
+    try {
+      let result: Array<Version> = JSON.parse(fromLs);
+
+      if (!isExpectedFormat(result)) {
+        // Local versions are a bit more tricky and might be in an old format (pre 0.5)
+        result = migrateVersions(result);
+        saveLocalVersions(result);
+      }
+
+      return result;
+    } catch {}
+  }
+
+  return [];
 }
 
 /**
  * Saves local versions to localStorage.
- *
- * @param {Array<Version | RunnableVersion>} versions
  */
-export function saveLocalVersions(versions: Array<Version | RunnableVersion>) {
+export function saveLocalVersions(
+  versions: Array<Version | RunnableVersion>,
+): void {
   const filteredVersions = versions.filter((v) => {
     if (isElectronVersion(v)) {
       return v.source === VersionSource.local;
@@ -209,74 +129,46 @@ export function saveLocalVersions(versions: Array<Version | RunnableVersion>) {
     return true;
   });
 
-  return saveVersions(VersionKeys.local, filteredVersions);
+  const stringified = JSON.stringify(filteredVersions);
+  window.localStorage.setItem(GlobalSetting.localVersion, stringified);
 }
 
-/**
- * Retrieves our best guess regarding the latest Electron versions. Tries to
- * fetch them from localStorage, then from a static releases.json file.
- *
- * @returns {Array<Version>}
- */
 function getReleasedVersions(): Array<Version> {
-  return getVersions(VersionKeys.known, () => {
-    return releasesJSON as Array<Version>;
-  });
-}
+  const versions = window.ElectronFiddle.getReleasedVersions();
+  const fromLs = window.localStorage.getItem(GlobalSetting.knownVersion);
 
-/**
- * Helper to check if this version is from a released major branch.
- *
- * This way when we have a local version of Electron like '999.0.0'
- * we'll know to not try & download 999-x-y.zip from GitHub :D
- *
- * @param {number} major - Electron major version number
- * @returns {boolean} true if there are releases with that major version
- */
-export function isReleasedMajor(major: number) {
-  const prefix = `${major}.`;
-  return getReleasedVersions().some((ver) => ver.version.startsWith(prefix));
-}
+  if (fromLs) {
+    try {
+      const result: Array<Version> = JSON.parse(fromLs);
 
-/**
- * Saves known versions to localStorage.
- *
- * @param {Array<Version>} versions
- */
-function saveKnownVersions(versions: Array<Version>) {
-  return saveVersions(VersionKeys.known, versions);
+      // If there are more versions known in localStorage, use
+      // those and wait for a subsequent fetch to pull the latest
+      // version electronjs.org and remove the localStorage item
+      if (result.length > versions.length) {
+        return result;
+      }
+    } catch {}
+  }
+
+  return versions;
 }
 
 /**
  * Fetch a list of released versions from electronjs.org.
- *
- * @returns {Promise<Version[]>}
  */
 export async function fetchVersions(): Promise<Version[]> {
-  const url = 'https://releases.electronjs.org/releases.json';
-  const response = await window.fetch(url, {
-    cache: 'no-store',
-  });
-  const data = (await response.json()) as { version: string }[];
+  const versions = await window.ElectronFiddle.fetchVersions();
 
-  const versions: Version[] = data
-    // Don't support anything older than 0.30 (Aug 2015).
-    // The oldest version known to releases.json.org is 0.20,
-    // Pre-0.24.0 versions were technically 'atom-shell' and cannot
-    // be downloaded with @electron/get.
-    .filter((ver) => !ver.version.startsWith('0.2'))
-    .map(({ version }) => ({ version }));
+  // Migrate away from known versions being stored in localStorage
+  // Now that we've fetched new versions, it's safe to delete
+  window.localStorage.removeItem(GlobalSetting.knownVersion);
 
   console.log(`Fetched ${versions.length} new Electron versions`);
-  if (versions.length > 0) saveKnownVersions(versions);
   return versions;
 }
 
 /**
  * Is the given array an array of versions?
- *
- * @param {Array<any>} input
- * @returns {boolean}
  */
 function isExpectedFormat(input: Array<any>): boolean {
   return input.every((entry) => !!entry.version);
@@ -284,9 +176,6 @@ function isExpectedFormat(input: Array<any>): boolean {
 
 /**
  * Migrates old versions, if necessary
- *
- * @param {Array<any>} input
- * @returns {Array<Version>}
  */
 function migrateVersions(input: Array<any>): Array<Version> {
   return input
@@ -309,15 +198,4 @@ function isElectronVersion(
   input: Version | RunnableVersion,
 ): input is RunnableVersion {
   return (input as RunnableVersion).source !== undefined;
-}
-
-export function getOldestSupportedMajor(): number | undefined {
-  const NUM_BRANCHES = parseInt(process.env.NUM_STABLE_BRANCHES || '') || 4;
-
-  return getReleasedVersions()
-    .filter((ver) => ver.version.endsWith('.0.0'))
-    .map((ver) => Number.parseInt(ver.version))
-    .sort((a, b) => a - b)
-    .slice(-NUM_BRANCHES)
-    .shift();
 }

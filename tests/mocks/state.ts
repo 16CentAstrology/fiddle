@@ -1,5 +1,7 @@
 import { makeObservable, observable } from 'mobx';
 
+import { BisectorMock } from './bisector';
+import { VersionsMock } from './electron-versions';
 import {
   BlockableAccelerator,
   ElectronReleaseChannel,
@@ -10,9 +12,6 @@ import {
 import { EditorMosaic } from '../../src/renderer/editor-mosaic';
 import { ELECTRON_MIRROR } from '../../src/renderer/mirror-constants';
 import { objectDifference } from '../utils';
-import { BisectorMock } from './bisector';
-import { VersionsMock } from './electron-versions';
-import { FiddleRunnerMock, InstallerMock } from './fiddle-core';
 
 export class StateMock {
   public acceleratorsToBlock: BlockableAccelerator[] = [];
@@ -23,7 +22,7 @@ export class StateMock {
   public executionFlags: string[] = [];
   public genericDialogLastInput: string | null = null;
   public genericDialogLastResult: boolean | null = null;
-  public genericDialogOptions: GenericDialogOptions = {} as any;
+  public genericDialogOptions = {} as GenericDialogOptions;
   public gistId = '';
   public gitHubAvatarUrl: string | null = null;
   public gitHubLogin: string | null = null;
@@ -59,6 +58,8 @@ export class StateMock {
   public packageAuthor = 'electron<electron@electron.org>';
   public electronMirror = ELECTRON_MIRROR;
   public isBisectCommandShowing = false;
+  public isDownloadingAll = false;
+  public isDeletingAll = false;
 
   public Bisector: BisectorMock | undefined = new BisectorMock();
   public addAcceleratorToBlock = jest.fn();
@@ -91,6 +92,12 @@ export class StateMock {
     const { mockVersionsArray } = new VersionsMock();
     return { ver: this.versions[mockVersionsArray[0].version] };
   });
+  public startDownloadingAll = jest.fn().mockImplementation(() => {
+    this.isDownloadingAll = true;
+  });
+  public stopDownloadingAll = jest.fn().mockImplementation(() => {
+    this.isDownloadingAll = false;
+  });
   public showChannels = jest.fn();
   public showConfirmDialog = jest.fn();
   public showErrorDialog = jest.fn();
@@ -98,12 +105,13 @@ export class StateMock {
   public showInfoDialog = jest.fn();
   public showInputDialog = jest.fn();
   public signOutGitHub = jest.fn();
+  public toggleAddMonacoThemeDialog = jest.fn();
   public toggleAddVersionDialog = jest.fn();
   public toggleAuthDialog = jest.fn();
   public toggleSettings = jest.fn();
   public updateElectronVersions = jest.fn();
-  public installer = new InstallerMock();
-  public versionRunner = new FiddleRunnerMock();
+  public startDeletingAll = jest.fn();
+  public stopDeletingAll = jest.fn();
 
   constructor() {
     makeObservable(this, {
@@ -151,6 +159,8 @@ export class StateMock {
       packageAuthor: observable,
       electronMirror: observable,
       isBisectCommandShowing: observable,
+      isDeletingAll: observable,
+      isDownloadingAll: observable,
     });
 
     const { mockVersions: obj, mockVersionsArray: arr } = new VersionsMock();
@@ -180,11 +190,13 @@ export class StateMock {
       [ver.version, ver.source, ver.state].join(' ');
     for (const [key, val] of Object.entries(o)) {
       if (key == 'currentElectronVersion') {
-        o[key] = terserRunnable(val) as any;
+        o[key] = terserRunnable(val as RunnableVersion);
       } else if (key === 'versions') {
-        o[key] = Object.values(val).map(terserRunnable) as any;
+        o[key] = Object.values(val as Record<string, RunnableVersion>).map(
+          terserRunnable,
+        );
       } else if (key === 'versionsToShow') {
-        o[key] = val.map(terserRunnable);
+        o[key] = (val as Array<RunnableVersion>).map(terserRunnable);
       }
     }
 

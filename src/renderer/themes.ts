@@ -1,117 +1,64 @@
-import * as path from 'path';
-
-import * as fs from 'fs-extra';
-
-import { CONFIG_PATH } from './constants';
+import { PREFERS_DARK_MEDIA_QUERY } from './constants';
+import { AppState } from './state';
 import {
   DefaultThemes,
   FiddleTheme,
   LoadedFiddleTheme,
   defaultDark,
   defaultLight,
-} from './themes-defaults';
-
-export const THEMES_PATH = path.join(CONFIG_PATH, 'themes');
+} from '../themes-defaults';
 
 /**
  * Activate a given theme (or the default)
- *
- * @param {LoadedFiddleTheme} theme
  */
 export function activateTheme(theme: LoadedFiddleTheme) {
-  const { monaco } = window.ElectronFiddle;
+  const { monaco } = window;
   monaco.editor.defineTheme('main', theme.editor as any);
   monaco.editor.setTheme('main');
 }
 
-/**
- * Read in a theme file.
- *
- * @export
- * @param {string} [name]
- * @returns {Promise<FiddleTheme | null>}
- */
-export async function readThemeFile(
-  name?: string,
-): Promise<LoadedFiddleTheme | null> {
-  if (!name || name === DefaultThemes.DARK) return defaultDark as any;
-  if (name === DefaultThemes.LIGHT) return defaultLight as any;
-
-  const file = name.endsWith('.json') ? name : `${name}.json`;
-  const themePath = path.join(THEMES_PATH, file);
-
-  try {
-    const theme = await fs.readJSON(themePath);
-    return {
-      ...theme,
-      name: theme.name || name.replace('.json', ''),
-      file,
-    };
-  } catch (error) {
-    console.warn(`Themes: Loading theme ${name} failed`, error);
-    return null;
-  }
-}
-
-/**
- * Reads and then returns all available themes.
- *
- * @returns {Promise<Array<LoadedFiddleTheme>>}
- */
-export async function getAvailableThemes(): Promise<Array<LoadedFiddleTheme>> {
-  const themes: Array<LoadedFiddleTheme> = [
-    defaultDark as any,
-    defaultLight as any,
-  ];
-
-  if (!fs.existsSync(THEMES_PATH)) {
-    return themes;
-  }
-
-  try {
-    const themeFiles = await fs.readdir(THEMES_PATH);
-
-    for (const file of themeFiles) {
-      const theme = await readThemeFile(file);
-
-      if (theme) {
-        themes.push(theme);
-      }
-    }
-  } catch (error) {
-    console.warn(`Themes: Could not read available themes`, error);
-  }
-
-  return themes;
+export function getCurrentTheme(): LoadedFiddleTheme {
+  return window.matchMedia(PREFERS_DARK_MEDIA_QUERY).matches
+    ? defaultDark
+    : defaultLight;
 }
 
 /**
  * Returns a Fiddle theme, either a default one or by checking
  * the disk for a JSON file.
- *
- * @export
- * @param {string} [name]
- * @returns {Promise<LoadedFiddleTheme>}
  */
 export async function getTheme(
-  name?: string | null,
+  appState: AppState,
+  name: string | null,
 ): Promise<LoadedFiddleTheme> {
   console.log(`Themes: getTheme() loading ${name || 'default'}`);
-  const theme = (await readThemeFile(name || undefined)) || defaultDark;
+
+  let theme: LoadedFiddleTheme | null = null;
+
+  if (name === DefaultThemes.LIGHT) {
+    theme = defaultLight;
+  } else if (name === DefaultThemes.DARK) {
+    theme = defaultDark;
+  } else if (name) {
+    theme = await window.ElectronFiddle.readThemeFile(name);
+  }
+
+  // If there is no theme, default to the current system theme
+  // if the app is using system theme, otherwise default to dark
+  if (!theme) {
+    theme = appState.isUsingSystemTheme ? getCurrentTheme() : defaultDark;
+  }
 
   return { ...theme, css: await getCssStringForTheme(theme) };
 }
 
 /**
  * Get the CSS string for a theme.
- *
- * @param {FiddleTheme} theme
- * @returns {Promise<string>}
  */
 async function getCssStringForTheme(theme: FiddleTheme): Promise<string> {
   let cssContent = '';
 
-  Object.keys(theme.common).forEach((key) => {
+  Object.keys(theme.common).forEach((key: keyof typeof theme.common) => {
     cssContent += `    --${key}: ${theme.common[key]};\n`;
   });
 

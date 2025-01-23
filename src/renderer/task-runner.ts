@@ -1,3 +1,7 @@
+import { App } from './app';
+import { AppState } from './state';
+import { getVersionRange } from './utils/get-version-range';
+import { normalizeVersion } from './utils/normalize-version';
 import {
   BisectRequest,
   ElectronReleaseChannel,
@@ -7,12 +11,6 @@ import {
   SetupRequest,
   TestRequest,
 } from '../interfaces';
-import { IpcEvents } from '../ipc-events';
-import { getVersionRange } from '../utils/get-version-range';
-import { normalizeVersion } from '../utils/normalize-version';
-import { App } from './app';
-import { ipcRendererManager } from './ipc';
-import { AppState } from './state';
 
 export class TaskRunner {
   private readonly appState: AppState;
@@ -28,11 +26,10 @@ export class TaskRunner {
 
   constructor(app: App) {
     const { runner, state } = app;
-    const ipc = ipcRendererManager;
 
     this.appState = state;
     this.autobisect = runner.autobisect.bind(runner);
-    this.done = (r: RunResult) => ipc.send(IpcEvents.TASK_DONE, r);
+    this.done = (r: RunResult) => window.ElectronFiddle.taskDone(r);
     this.hide = state.hideChannels.bind(state);
     this.showObsoleteVersions = (use: boolean) =>
       (state.showObsoleteVersions = use);
@@ -52,16 +49,19 @@ export class TaskRunner {
     this.show = state.showChannels.bind(state);
 
     this.bisect = this.bisect.bind(this);
-    let event = IpcEvents.TASK_BISECT;
-    ipc.removeAllListeners(event);
-    ipc.on(event, (_, r: BisectRequest) => {
-      this.bisect(r);
-    });
+    window.ElectronFiddle.removeAllListeners('bisect-task');
+    window.ElectronFiddle.addEventListener(
+      'bisect-task',
+      (r: BisectRequest) => {
+        this.bisect(r);
+      },
+    );
 
     this.test = this.test.bind(this);
-    event = IpcEvents.TASK_TEST;
-    ipc.removeAllListeners(event);
-    ipc.on(event, (_, r: TestRequest) => this.test(r));
+    window.ElectronFiddle.removeAllListeners('test-task');
+    window.ElectronFiddle.addEventListener('test-task', (r: TestRequest) =>
+      this.test(r),
+    );
   }
 
   private async bisect(req: BisectRequest) {

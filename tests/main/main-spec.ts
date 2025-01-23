@@ -3,6 +3,7 @@
  */
 
 import { BrowserWindow, app, systemPreferences } from 'electron';
+import { mocked } from 'jest-mock';
 
 import { IpcEvents } from '../../src/ipc-events';
 import { setupAboutPanel } from '../../src/main/about-panel';
@@ -13,16 +14,24 @@ import {
   onReady,
   onWindowsAllClosed,
   setupMenuHandler,
+  setupShowWindow,
   setupTitleBarClickMac,
 } from '../../src/main/main';
 import { shouldQuit } from '../../src/main/squirrel';
 import { setupUpdates } from '../../src/main/update';
 import { getOrCreateMainWindow } from '../../src/main/windows';
 import { BrowserWindowMock } from '../mocks/browser-window';
-import { overridePlatform } from '../utils';
+import { overridePlatform, resetPlatform } from '../utils';
+
+// Need to mock this out or CI will hit an error due to
+// code being run async continuing after the test ends:
+// > ReferenceError: You are trying to `import` a file
+// > after the Jest environment has been torn down.
+jest.mock('getos');
 
 jest.mock('../../src/main/windows', () => ({
   getOrCreateMainWindow: jest.fn(),
+  mainIsReady: jest.fn(),
 }));
 
 jest.mock('../../src/main/about-panel', () => ({
@@ -46,27 +55,21 @@ jest.mock('../../src/main/ipc');
  * for CI to know that the app is still opening a window.
  */
 describe('main', () => {
-  const oldPlatform = process.platform;
-
   beforeAll(() => {
-    Object.defineProperty(process, 'platform', {
-      value: 'win32',
-    });
+    overridePlatform('win32');
   });
 
   afterAll(() => {
-    Object.defineProperty(process, 'platform', {
-      value: oldPlatform,
-    });
+    resetPlatform();
   });
 
   beforeEach(() => {
-    (app.getPath as jest.Mock).mockImplementation((name) => name);
+    mocked(app.getPath).mockImplementation((name) => name);
   });
 
   describe('main()', () => {
     it('quits during Squirrel events', () => {
-      (shouldQuit as jest.Mock).mockReturnValueOnce(true);
+      mocked(shouldQuit).mockReturnValueOnce(true);
 
       main([]);
       expect(app.quit).toHaveBeenCalledTimes(1);
@@ -81,10 +84,8 @@ describe('main', () => {
   describe('onBeforeQuit()', () => {
     it('sets up IPC so app can quit if dialog confirmed', () => {
       onBeforeQuit();
-      expect(ipcMainManager.send).toHaveBeenCalledWith<any>(
-        IpcEvents.BEFORE_QUIT,
-      );
-      expect(ipcMainManager.on).toHaveBeenCalledWith<any>(
+      expect(ipcMainManager.send).toHaveBeenCalledWith(IpcEvents.BEFORE_QUIT);
+      expect(ipcMainManager.on).toHaveBeenCalledWith(
         IpcEvents.CONFIRM_QUIT,
         app.quit,
       );
@@ -95,7 +96,7 @@ describe('main', () => {
     it('opens a BrowserWindow, sets up updates', async () => {
       await onReady();
       expect(setupAboutPanel).toHaveBeenCalledTimes(1);
-      expect(getOrCreateMainWindow).toHaveBeenCalledTimes(1);
+      expect(getOrCreateMainWindow).toHaveBeenCalled();
       expect(setupUpdates).toHaveBeenCalledTimes(1);
     });
   });
@@ -108,9 +109,7 @@ describe('main', () => {
     });
 
     it('does not quit the app on macOS', () => {
-      Object.defineProperty(process, 'platform', {
-        value: 'darwin',
-      });
+      overridePlatform('darwin');
 
       onWindowsAllClosed();
 
@@ -122,10 +121,33 @@ describe('main', () => {
     it('check if listening on BLOCK_ACCELERATORS', () => {
       setupMenuHandler();
 
-      expect(ipcMainManager.on).toHaveBeenCalledWith<any>(
+      expect(ipcMainManager.on).toHaveBeenCalledWith(
         IpcEvents.BLOCK_ACCELERATORS,
         expect.anything(),
       );
+    });
+  });
+
+  describe('setupShowWindow()', () => {
+    beforeEach(() => {
+      // Since ipcMainManager is mocked, we can't just .emit to trigger
+      // the event. Instead, call the callback as soon as the listener
+      // is instantiated.
+      mocked(ipcMainManager.on).mockImplementationOnce((channel, callback) => {
+        if (channel === IpcEvents.SHOW_WINDOW) {
+          callback({});
+        }
+        return ipcMainManager;
+      });
+    });
+
+    it('shows the window', () => {
+      const mockWindow = new BrowserWindowMock();
+      mocked(BrowserWindow.fromWebContents).mockReturnValue(
+        mockWindow as unknown as BrowserWindow,
+      );
+      setupShowWindow();
+      expect(mockWindow.show).toHaveBeenCalled();
     });
   });
 
@@ -143,37 +165,20 @@ describe('main', () => {
         // Since ipcMainManager is mocked, we can't just .emit to trigger
         // the event. Instead, call the callback as soon as the listener
         // is instantiated.
-        (ipcMainManager.on as jest.Mock).mockImplementationOnce(
+        mocked(ipcMainManager.on).mockImplementationOnce(
           (channel, callback) => {
             if (channel === IpcEvents.CLICK_TITLEBAR_MAC) {
               callback({});
             }
+            return ipcMainManager;
           },
         );
       });
 
       it('should minimize the window if AppleActionOnDoubleClick is minimize', () => {
-        const mockWindow = new BrowserWindowMock();
-        (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(
-          mockWindow,
-        );
-        (systemPreferences.getUserDefault as jest.Mock).mockReturnValue(
-          'Minimize',
-        );
-
-        setupTitleBarClickMac();
-
-        expect(mockWindow.minimize).toHaveBeenCalled();
-      });
-
-      it('should minimize the window if AppleActionOnDoubleClick is minimize', () => {
-        const mockWindow = new BrowserWindowMock();
-        (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(
-          mockWindow,
-        );
-        (systemPreferences.getUserDefault as jest.Mock).mockReturnValue(
-          'Minimize',
-        );
+        const mockWindow = new BrowserWindowMock() as unknown as BrowserWindow;
+        mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow);
+        mocked(systemPreferences.getUserDefault).mockReturnValue('Minimize');
 
         setupTitleBarClickMac();
 
@@ -184,13 +189,11 @@ describe('main', () => {
 
       it('should maximize the window if AppleActionOnDoubleClick is maximize and the window is not maximized', () => {
         const mockWindow = new BrowserWindowMock();
-        mockWindow.isMaximized.mockReturnValue(false);
-        (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(
-          mockWindow,
+        mocked(mockWindow.isMaximized).mockReturnValue(false);
+        mocked(BrowserWindow.fromWebContents).mockReturnValue(
+          mockWindow as unknown as BrowserWindow,
         );
-        (systemPreferences.getUserDefault as jest.Mock).mockReturnValue(
-          'Maximize',
-        );
+        mocked(systemPreferences.getUserDefault).mockReturnValue('Maximize');
 
         setupTitleBarClickMac();
 
@@ -202,12 +205,10 @@ describe('main', () => {
       it('should unmaximize the window if AppleActionOnDoubleClick is maximize and the window is maximized', () => {
         const mockWindow = new BrowserWindowMock();
         mockWindow.isMaximized.mockReturnValue(true);
-        (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(
-          mockWindow,
+        mocked(BrowserWindow.fromWebContents).mockReturnValue(
+          mockWindow as unknown as BrowserWindow,
         );
-        (systemPreferences.getUserDefault as jest.Mock).mockReturnValue(
-          'Maximize',
-        );
+        mocked(systemPreferences.getUserDefault).mockReturnValue('Maximize');
 
         setupTitleBarClickMac();
 
@@ -218,11 +219,11 @@ describe('main', () => {
 
       it('should do nothing if AppleActionOnDoubleClick is an unknown value', () => {
         const mockWindow = new BrowserWindowMock();
-        (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(
-          mockWindow,
+        mocked(BrowserWindow.fromWebContents).mockReturnValue(
+          mockWindow as unknown as BrowserWindow,
         );
-        (systemPreferences.getUserDefault as jest.Mock).mockReturnValue(
-          undefined,
+        mocked(systemPreferences.getUserDefault).mockReturnValue(
+          undefined as any,
         );
         setupTitleBarClickMac();
         expect(mockWindow.minimize).not.toHaveBeenCalled();

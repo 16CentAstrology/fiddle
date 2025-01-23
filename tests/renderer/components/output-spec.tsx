@@ -1,9 +1,11 @@
 import * as React from 'react';
 
 import { shallow } from 'enzyme';
+import * as MonacoType from 'monaco-editor';
 
 import { Output } from '../../../src/renderer/components/output';
-import { StateMock } from '../../mocks/state';
+import { AppState } from '../../../src/renderer/state';
+import { MonacoMock } from '../../mocks/mocks';
 
 const mockContext = {
   mosaicActions: {
@@ -18,12 +20,12 @@ const mockContext = {
 };
 
 describe('Output component', () => {
-  let store: any;
-  let monaco: any;
+  let store: AppState;
+  let monaco: typeof MonacoType;
 
   beforeEach(() => {
-    store = new StateMock();
-    ({ monaco } = (window as any).ElectronFiddle);
+    monaco = window.monaco;
+    ({ state: store } = window.app);
   });
 
   it('renders the output container', () => {
@@ -37,7 +39,7 @@ describe('Output component', () => {
 
   it('correctly sets the language', () => {
     const wrapper = shallow(
-      <Output appState={store as any} monaco={monaco} monacoOptions={{}} />,
+      <Output appState={store} monaco={monaco} monacoOptions={{}} />,
     );
 
     expect((wrapper.instance() as any).language).toBe('consoleOutputLanguage');
@@ -46,7 +48,7 @@ describe('Output component', () => {
   describe('initMonaco()', () => {
     it('attempts to create an editor', async () => {
       const wrapper = shallow(
-        <Output appState={store as any} monaco={monaco} monacoOptions={{}} />,
+        <Output appState={store} monaco={monaco} monacoOptions={{}} />,
       );
       const instance: any = wrapper.instance();
 
@@ -60,7 +62,7 @@ describe('Output component', () => {
 
   it('componentWillUnmount() attempts to dispose the editor', async () => {
     const wrapper = shallow(
-      <Output appState={store as any} monaco={monaco} monacoOptions={{}} />,
+      <Output appState={store} monaco={monaco} monacoOptions={{}} />,
     );
     const instance: any = wrapper.instance();
 
@@ -68,7 +70,9 @@ describe('Output component', () => {
     await instance.initMonaco();
     instance.componentWillUnmount();
 
-    expect(monaco.latestEditor.dispose).toHaveBeenCalled();
+    expect(
+      (monaco as unknown as MonacoMock).latestEditor.dispose,
+    ).toHaveBeenCalled();
   });
 
   it('hides the console with react-mosaic-component', async () => {
@@ -119,7 +123,7 @@ describe('Output component', () => {
     ];
 
     const wrapper = shallow(
-      <Output appState={store as any} monaco={monaco} monacoOptions={{}} />,
+      <Output appState={store} monaco={monaco} monacoOptions={{}} />,
     );
     const instance: any = wrapper.instance();
 
@@ -128,19 +132,19 @@ describe('Output component', () => {
     instance.updateModel();
 
     expect(monaco.editor.createModel).toHaveBeenCalled();
-    expect(instance.editor.revealLine).toHaveBeenCalled();
+    expect(instance.editor?.revealLine).toHaveBeenCalled();
   });
 
   it('updateModel correctly observes and gets called when output is updated', async () => {
     store.output = [
       {
-        timestamp: 1532704073130,
+        timeString: '12:00:01 PM',
         text: 'Hi!',
       },
     ];
 
     const wrapper = shallow(
-      <Output appState={store as any} monaco={monaco} monacoOptions={{}} />,
+      <Output appState={store} monaco={monaco} monacoOptions={{}} />,
     );
 
     const instance: any = wrapper.instance();
@@ -154,11 +158,11 @@ describe('Output component', () => {
     // new output
     store.output = [
       {
-        timestamp: 1532704073130,
+        timeString: '12:00:01 PM',
         text: 'Hi!',
       },
       {
-        timestamp: 1532704073130,
+        timeString: '12:00:01 PM',
         text: 'Hi!',
         isNotPre: true,
       },
@@ -169,7 +173,7 @@ describe('Output component', () => {
   it('handles componentDidUpdate', async () => {
     // set up component
     const wrapper = shallow(
-      <Output appState={store as any} monaco={monaco} monacoOptions={{}} />,
+      <Output appState={store} monaco={monaco} monacoOptions={{}} />,
     );
     const instance: any = wrapper.instance();
     const spy = jest.spyOn(instance, 'toggleConsole');
@@ -177,8 +181,7 @@ describe('Output component', () => {
     instance.outputRef.current = 'ref';
     await instance.initMonaco();
 
-    // setContent will trigger componentDidUpdate()
-    instance.editor.setContent(store.output);
+    await instance.updateModel();
     expect(spy).toHaveBeenCalled();
   });
 });

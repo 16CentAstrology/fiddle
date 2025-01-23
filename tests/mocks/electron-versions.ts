@@ -1,6 +1,8 @@
-import { InstallState } from '@electron/fiddle-core';
-
-import { RunnableVersion, VersionSource } from '../../src/interfaces';
+import {
+  InstallState,
+  RunnableVersion,
+  VersionSource,
+} from '../../src/interfaces';
 
 export class VersionsMock {
   public readonly mockVersions: Record<string, RunnableVersion>;
@@ -15,7 +17,7 @@ export class VersionsMock {
       version,
     }));
 
-    const obj = {};
+    const obj: Record<string, RunnableVersion> = {};
     for (const ver of arr) {
       obj[ver.version] = ver;
     }

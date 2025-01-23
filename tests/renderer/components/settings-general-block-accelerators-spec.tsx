@@ -4,40 +4,36 @@ import { shallow } from 'enzyme';
 
 import { BlockableAccelerator } from '../../../src/interfaces';
 import { BlockAcceleratorsSettings } from '../../../src/renderer/components/settings-general-block-accelerators';
-import { StateMock } from '../../mocks/mocks';
+import { AppState } from '../../../src/renderer/state';
 
 describe('BlockAcceleratorsSettings component', () => {
-  let store: StateMock;
+  let store: AppState;
 
   beforeEach(() => {
-    ({ state: store } = (window as any).ElectronFiddle.app);
+    ({ state: store } = window.app);
   });
 
   it('renders', () => {
-    const wrapper = shallow(
-      <BlockAcceleratorsSettings appState={store as any} />,
-    );
+    const wrapper = shallow(<BlockAcceleratorsSettings appState={store} />);
     expect(wrapper).toMatchSnapshot();
   });
 
   describe('handleBlockAcceleratorChange()', () => {
     it('handles a new selection', async () => {
-      const wrapper = shallow(
-        <BlockAcceleratorsSettings appState={store as any} />,
-      );
-      const instance = wrapper.instance() as any;
+      const wrapper = shallow(<BlockAcceleratorsSettings appState={store} />);
+      const instance: any = wrapper.instance();
 
-      await instance.handleBlockAcceleratorChange({
+      instance.handleBlockAcceleratorChange({
         currentTarget: { checked: false, value: BlockableAccelerator.save },
-      });
+      } as React.FormEvent<HTMLInputElement>);
 
       expect(store.removeAcceleratorToBlock).toHaveBeenCalledWith(
         BlockableAccelerator.save,
       );
 
-      await instance.handleBlockAcceleratorChange({
+      instance.handleBlockAcceleratorChange({
         currentTarget: { checked: true, value: BlockableAccelerator.save },
-      });
+      } as React.FormEvent<HTMLInputElement>);
 
       expect(store.addAcceleratorToBlock).toHaveBeenCalledWith(
         BlockableAccelerator.save,

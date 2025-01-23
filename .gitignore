@@ -24,6 +24,7 @@ compile_commands.json
 .envrc
 .cache
 yarn-error.log
+*.p12
 
 # Coverage
 coverage
@@ -38,6 +39,7 @@ report.json
 # Electron Fiddle-Specific
 /static/contributors.json
 /static/css/root.css
+/static/releases.json
 
 # Webpack configurations
 .webpack

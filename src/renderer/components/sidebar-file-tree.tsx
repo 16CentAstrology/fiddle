@@ -14,10 +14,10 @@ import { ContextMenu2, Tooltip2 } from '@blueprintjs/popover2';
 import classNames from 'classnames';
 import { observer } from 'mobx-react';
 
-import { EditorId } from '../../interfaces';
-import { isRequiredFile, isSupportedFile } from '../../utils/editor-utils';
+import { EditorId, PACKAGE_NAME } from '../../interfaces';
 import { EditorPresence } from '../editor-mosaic';
 import { AppState } from '../state';
+import { isMainEntryPoint, isSupportedFile } from '../utils/editor-utils';
 
 interface FileTreeProps {
   appState: AppState;
@@ -68,7 +68,7 @@ export const SidebarFileTree = observer(
                       onClick={() => this.renameEditor(editorId)}
                     />
                     <MenuItem
-                      disabled={isRequiredFile(editorId)}
+                      disabled={isMainEntryPoint(editorId)}
                       icon="remove"
                       text="Delete"
                       intent="danger"
@@ -189,18 +189,32 @@ export const SidebarFileTree = observer(
 
       if (!id) return;
 
+      if (
+        id.endsWith('.json') &&
+        [PACKAGE_NAME, 'package-lock.json'].includes(id)
+      ) {
+        await appState.showErrorDialog(
+          `Cannot add ${PACKAGE_NAME} or package-lock.json as custom files`,
+        );
+        return;
+      }
+
       if (!isSupportedFile(id)) {
         await appState.showErrorDialog(
-          `Invalid filename "${id}": Must be a file ending in .js, .html, or .css`,
+          `Invalid filename "${id}": Must be a file ending in .cjs, .js, .mjs, .html, .css, or .json`,
         );
         return;
       }
 
       const contents = appState.editorMosaic.value(editorId).trim();
-      appState.editorMosaic.remove(editorId);
-      appState.editorMosaic.addNewFile(id, contents);
+      try {
+        appState.editorMosaic.addNewFile(id, contents);
+        appState.editorMosaic.remove(editorId);
 
-      if (visible) appState.editorMosaic.show(id);
+        if (visible) appState.editorMosaic.show(id);
+      } catch (err) {
+        appState.showErrorDialog(err.message);
+      }
     };
 
     public removeEditor = (editorId: EditorId) => {

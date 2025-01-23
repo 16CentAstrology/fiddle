@@ -1,6 +1,9 @@
+import { ReleaseInfo } from '@electron/fiddle-core';
+import { mocked } from 'jest-mock';
+
 import { PACKAGE_NAME } from '../../src/interfaces';
 import { forgeTransform } from '../../src/renderer/transforms/forge';
-import { getForgeVersion } from '../../src/utils/get-package';
+import { getForgeVersion } from '../../src/renderer/utils/get-package';
 
 describe('forgeTransform()', () => {
   it('adds forge dependencies', async () => {
@@ -56,5 +59,32 @@ describe('forgeTransform()', () => {
 
     const files = await forgeTransform(filesBefore);
     expect(files.get(PACKAGE_NAME)).toBe('garbage');
+  });
+
+  it('forces ABI for nightly builds', async () => {
+    mocked(window.ElectronFiddle.getReleaseInfo).mockResolvedValue({
+      version: '26.0.0-nightly.20230411',
+      modules: '116',
+    } as ReleaseInfo);
+    const filesBefore = new Map();
+    filesBefore.set(
+      PACKAGE_NAME,
+      JSON.stringify({
+        devDependencies: {
+          'electron-nightly': '26.0.0-nightly.20230411',
+        },
+      }),
+    );
+
+    const files = await forgeTransform(filesBefore);
+    expect(JSON.parse(files.get(PACKAGE_NAME)!)).toMatchObject({
+      config: {
+        forge: {
+          electronRebuildConfig: {
+            forceABI: 116,
+          },
+        },
+      },
+    });
   });
 });

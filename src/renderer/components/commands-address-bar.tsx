@@ -6,9 +6,7 @@ import { reaction } from 'mobx';
 import { observer } from 'mobx-react';
 
 import { GistActionState } from '../../interfaces';
-import { IpcEvents } from '../../ipc-events';
 import { idFromUrl, urlFromId } from '../../utils/gist';
-import { ipcRendererManager } from '../ipc';
 import { AppState } from '../state';
 
 interface AddressBarProps {
@@ -35,15 +33,14 @@ export const AddressBar = observer(
       const { gistId } = this.props.appState;
       const value = urlFromId(gistId);
 
-      const { remoteLoader } = window.ElectronFiddle.app;
+      const { remoteLoader } = window.app;
 
       this.state = {
         value,
         loaders: {
           gist: remoteLoader.loadFiddleFromGist.bind(remoteLoader),
-          example: remoteLoader.loadFiddleFromElectronExample.bind(
-            remoteLoader,
-          ),
+          example:
+            remoteLoader.loadFiddleFromElectronExample.bind(remoteLoader),
         },
       };
     }
@@ -51,8 +48,6 @@ export const AddressBar = observer(
     /**
      * Handle the form's submit event, trying to load whatever
      * URL was entered.
-     *
-     * @param {React.SyntheticEvent<HTMLFormElement>} event
      */
     private handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
       event.preventDefault();
@@ -61,11 +56,9 @@ export const AddressBar = observer(
 
     /**
      * Commit the address bar's value to app state and load the fiddle.
-     *
-     * @memberof AddressBar
      */
     private submit() {
-      const { remoteLoader } = window.ElectronFiddle.app;
+      const { remoteLoader } = window.app;
       if (this.state.value) {
         remoteLoader.fetchGistAndLoad(
           idFromUrl(this.state.value) || this.state.value,
@@ -83,29 +76,17 @@ export const AddressBar = observer(
         () => appState.gistId,
         (gistId: string) => this.setState({ value: urlFromId(gistId) }),
       );
-      ipcRendererManager.on(IpcEvents.LOAD_GIST_REQUEST, loaders.gist);
-      ipcRendererManager.on(
-        IpcEvents.LOAD_ELECTRON_EXAMPLE_REQUEST,
-        loaders.example,
-      );
+      window.ElectronFiddle.addEventListener('load-gist', loaders.gist);
+      window.ElectronFiddle.addEventListener('load-example', loaders.example);
     }
 
     public componentWillUnmount() {
-      const { loaders } = this.state;
-      ipcRendererManager.removeListener(
-        IpcEvents.LOAD_GIST_REQUEST,
-        loaders.gist,
-      );
-      ipcRendererManager.removeListener(
-        IpcEvents.LOAD_ELECTRON_EXAMPLE_REQUEST,
-        loaders.example,
-      );
+      window.ElectronFiddle.removeAllListeners('load-gist');
+      window.ElectronFiddle.removeAllListeners('load-example');
     }
 
     /**
      * Handle the change event, which usually just updates the address bar's value
-     *
-     * @param {React.ChangeEvent<HTMLInputElement>} event
      */
     private handleChange(event: React.ChangeEvent<HTMLInputElement>) {
       this.setState({ value: event.target.value });

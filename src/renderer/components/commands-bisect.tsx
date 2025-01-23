@@ -1,9 +1,9 @@
 import * as React from 'react';
 
 import { Button } from '@blueprintjs/core';
-import { InstallState } from '@electron/fiddle-core';
 import { observer } from 'mobx-react';
 
+import { InstallState } from '../../interfaces';
 import { AppState } from '../state';
 
 interface BisectHandlerProps {
@@ -20,7 +20,7 @@ export const BisectHandler = observer(
     }
 
     private continueBisect(isGood: boolean) {
-      window.ElectronFiddle.app.runner.stop();
+      window.app.runner.stop();
 
       const { appState } = this.props;
       const response = appState.Bisector!.continue(isGood);

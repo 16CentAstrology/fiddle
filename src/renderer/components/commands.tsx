@@ -1,16 +1,15 @@
 import * as React from 'react';
 
 import { Button, ControlGroup } from '@blueprintjs/core';
+import classNames from 'classnames';
 import { observer } from 'mobx-react';
 
-import { IpcEvents } from '../../ipc-events';
-import { ipcRendererManager } from '../ipc';
-import { AppState } from '../state';
 import { GistActionButton } from './commands-action-button';
 import { AddressBar } from './commands-address-bar';
 import { BisectHandler } from './commands-bisect';
 import { Runner } from './commands-runner';
 import { VersionChooser } from './commands-version-chooser';
+import { AppState } from '../state';
 
 interface CommandsProps {
   appState: AppState;
@@ -19,9 +18,6 @@ interface CommandsProps {
 /**
  * The command bar, containing all the buttons doing
  * all the things
- *
- * @class Commands
- * @extends {React.Component<CommandsProps>}
  */
 export const Commands = observer(
   class Commands extends React.Component<CommandsProps> {
@@ -30,20 +26,23 @@ export const Commands = observer(
     }
 
     private handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.target['tagName'] !== 'INPUT') {
-        ipcRendererManager.send(IpcEvents.CLICK_TITLEBAR_MAC);
+      // Only maximize if the toolbar itself is clicked (ignore for buttons, input, etc)
+      if (e.currentTarget === e.target) {
+        window.ElectronFiddle.macTitlebarClicked();
       }
     };
 
     public render() {
       const { appState } = this.props;
-      const { isBisectCommandShowing, title } = appState;
+      const { isBisectCommandShowing, title, isSettingsShowing } = appState;
 
       return (
         <div
-          className={
-            process.platform === 'darwin' ? 'commands is-mac' : 'commands'
-          }
+          className={classNames(
+            'commands',
+            { 'is-mac': window.ElectronFiddle.platform === 'darwin' },
+            { 'tabbing-hidden': isSettingsShowing },
+          )}
           onDoubleClick={this.handleDoubleClick}
         >
           <div>
@@ -72,7 +71,7 @@ export const Commands = observer(
               />
             </ControlGroup>
           </div>
-          {process.platform === 'darwin' ? (
+          {window.ElectronFiddle.platform === 'darwin' ? (
             <div className="title">{title}</div>
           ) : undefined}
           <div>

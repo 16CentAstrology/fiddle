@@ -1,16 +1,12 @@
 import * as React from 'react';
 
-import * as path from 'path';
-
 import { Button, Dialog, FileInput } from '@blueprintjs/core';
-import { shell } from 'electron';
-import * as fs from 'fs-extra';
 import { observer } from 'mobx-react';
 import * as MonacoType from 'monaco-editor';
 
+import { FiddleTheme } from '../../themes-defaults';
 import { AppState } from '../state';
-import { THEMES_PATH, getTheme } from '../themes';
-import { LoadedFiddleTheme, defaultDark } from '../themes-defaults';
+import { getTheme } from '../themes';
 
 interface AddThemeDialogProps {
   appState: AppState;
@@ -22,9 +18,6 @@ interface AddThemeDialogState {
 
 /**
  * The "add monaco theme" dialog allows users to add custom editor themes.
- *
- * @class AddThemeDialog
- * @extends {React.Component<AddThemeDialogProps, AddThemeDialogState>}
  */
 export const AddThemeDialog = observer(
   class AddThemeDialog extends React.Component<
@@ -40,16 +33,13 @@ export const AddThemeDialog = observer(
       this.onSubmit = this.onSubmit.bind(this);
       this.onClose = this.onClose.bind(this);
       this.onChangeFile = this.onChangeFile.bind(this);
-      this.reset = this.reset.bind(this);
     }
 
     /**
      * Handles a change of the file input.
-     *
-     * @param {React.ChangeEvent<HTMLInputElement>} event
      */
     public async onChangeFile(event: React.FormEvent<HTMLInputElement>) {
-      const { files } = event.target as any;
+      const { files } = event.target as HTMLInputElement;
       const file = files?.[0];
 
       this.setState({ file });
@@ -57,26 +47,26 @@ export const AddThemeDialog = observer(
 
     /**
      * Handles the submission of the dialog.
-     *
-     * @returns {Promise<void>}
      */
     public async onSubmit(): Promise<void> {
       const { file } = this.state;
       const { appState } = this.props;
 
-      const defaultTheme = !!appState.theme
-        ? await getTheme(appState.theme)
-        : defaultDark;
+      const defaultTheme = await getTheme(appState, appState.theme);
 
       if (!file) return;
 
       try {
-        const editor = fs.readJSONSync(file.path);
+        const editor = JSON.parse(await file.text());
         if (!editor.base && !editor.rules)
           throw Error('File does not match specifications'); // has to have these attributes
-        defaultTheme.editor = editor as Partial<MonacoType.editor.IStandaloneThemeData>;
-        const newTheme = defaultTheme;
-        const name = editor.name ? editor.name : file.name;
+        const newTheme: FiddleTheme = { ...defaultTheme };
+        newTheme.editor =
+          editor as Partial<MonacoType.editor.IStandaloneThemeData>;
+        // Use file.name if no editor.name, and strip file extension (should be .json)
+        const name: string = editor.name
+          ? editor.name
+          : file.name.slice(0, file.name.lastIndexOf('.'));
         await this.createNewThemeFromMonaco(name, newTheme);
       } catch (error) {
         appState.showErrorDialog(`${error}, please pick a different file.`);
@@ -89,25 +79,14 @@ export const AddThemeDialog = observer(
 
     public async createNewThemeFromMonaco(
       name: string,
-      newTheme: LoadedFiddleTheme,
+      newTheme: FiddleTheme,
     ): Promise<void> {
       if (!name) {
         throw new Error(`Filename ${name} not found`);
       }
 
-      const themePath = path.join(THEMES_PATH, `${name}`);
-
-      await fs.outputJSON(
-        themePath,
-        {
-          ...newTheme,
-          name,
-        },
-        { spaces: 2 },
-      );
-
-      this.props.appState.setTheme(themePath);
-      shell.showItemInFolder(themePath);
+      const theme = await window.ElectronFiddle.createThemeFile(newTheme, name);
+      this.props.appState.setTheme(theme.file);
     }
 
     get buttons() {
@@ -131,8 +110,9 @@ export const AddThemeDialog = observer(
     }
 
     public onClose() {
-      this.props.appState.isThemeDialogShowing = false;
-      this.reset();
+      this.setState(this.resetState, () => {
+        this.props.appState.isThemeDialogShowing = false;
+      });
     }
 
     public render() {
@@ -151,7 +131,7 @@ export const AddThemeDialog = observer(
           <div className="bp3-dialog-body">
             <FileInput
               onInputChange={this.onChangeFile}
-              inputProps={inputProps as any}
+              inputProps={inputProps}
               text={text}
             />
             <br />
@@ -161,14 +141,6 @@ export const AddThemeDialog = observer(
           </div>
         </Dialog>
       );
-    }
-
-    /**
-     * Reset this component's state
-     */
-    private reset(): void {
-      this.setState(this.resetState);
-      return;
     }
   },
 );

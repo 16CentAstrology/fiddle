@@ -2,13 +2,14 @@ import { action, computed, makeObservable, observable, reaction } from 'mobx';
 import * as MonacoType from 'monaco-editor';
 import { MosaicDirection, MosaicNode, getLeaves } from 'react-mosaic-component';
 
-import { EditorId, EditorValues } from '../interfaces';
 import {
   compareEditors,
   getEmptyContent,
+  isMainEntryPoint,
   isSupportedFile,
   monacoLanguage,
-} from '../utils/editor-utils';
+} from './utils/editor-utils';
+import { EditorId, EditorValues, PACKAGE_NAME } from '../interfaces';
 
 export type Editor = MonacoType.editor.IStandaloneCodeEditor;
 
@@ -140,11 +141,23 @@ export class EditorMosaic {
 
   /** Add a file. If we already have a file with that name, replace it. */
   private addFile(id: EditorId, value: string) {
-    if (!isSupportedFile(id))
-      throw new Error(`Cannot add file "${id}": Must be .js, .html, or .css`);
+    if (
+      id.endsWith('.json') &&
+      [PACKAGE_NAME, 'package-lock.json'].includes(id)
+    ) {
+      throw new Error(
+        `Cannot add ${PACKAGE_NAME} or package-lock.json as custom files`,
+      );
+    }
+
+    if (!isSupportedFile(id)) {
+      throw new Error(
+        `Cannot add file "${id}": Must be .cjs, .js, .mjs, .html, .css, or .json`,
+      );
+    }
 
     // create a monaco model with the file's contents
-    const { monaco } = window.ElectronFiddle;
+    const { monaco } = window;
     const language = monacoLanguage(id);
     const model = monaco.editor.createModel(value, language);
     model.updateOptions({ tabSize: 2 });
@@ -165,6 +178,8 @@ export class EditorMosaic {
     } else {
       this.hide(id);
     }
+
+    this.isEdited = true;
   }
 
   /// show or hide files in the view
@@ -237,6 +252,8 @@ export class EditorMosaic {
     this.editors.delete(id);
     this.backups.delete(id);
     this.setVisible(getLeaves(this.mosaic).filter((v) => v !== id));
+
+    this.isEdited = true;
   }
 
   /** Wire up a newly-mounted Monaco editor */
@@ -259,8 +276,17 @@ export class EditorMosaic {
 
   /** Add a new file to the mosaic */
   public addNewFile(id: EditorId, value: string = getEmptyContent(id)) {
-    if (this.files.has(id))
+    if (this.files.has(id)) {
       throw new Error(`Cannot add file "${id}": File already exists`);
+    }
+
+    const entryPoint = this.mainEntryPointFile();
+
+    if (isMainEntryPoint(id) && entryPoint) {
+      throw new Error(
+        `Cannot add file "${id}": Main entry point ${entryPoint} exists`,
+      );
+    }
 
     this.addFile(id, value);
   }
@@ -300,6 +326,10 @@ export class EditorMosaic {
 
   public updateOptions(options: MonacoType.editor.IEditorOptions) {
     for (const editor of this.editors.values()) editor.updateOptions(options);
+  }
+
+  public mainEntryPointFile(): EditorId | undefined {
+    return Array.from(this.files.keys()).find((id) => isMainEntryPoint(id));
   }
 
   //=== Listen for user edits

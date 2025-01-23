@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
 
 import { BrowserWindowMock } from './browser-window';
 import { WebContentsMock } from './web-contents';
@@ -41,6 +41,22 @@ export class MenuMock {
   }
 }
 
+export class MessageChannelMainMock {
+  public port1: MessagePortMainMock;
+  public port2: MessagePortMainMock;
+
+  constructor() {
+    this.port1 = new MessagePortMainMock();
+    this.port2 = new MessagePortMainMock();
+  }
+}
+
+export class MessagePortMainMock {
+  public once = jest.fn();
+  public postMessage = jest.fn();
+  public start = jest.fn();
+}
+
 export class NativeImageMock {
   public readonly args: Array<any>;
   constructor(...args: Array<any>) {
@@ -77,7 +93,12 @@ export class IPCMainMock extends EventEmitter {
 
 export class IPCRendererMock extends EventEmitter {
   public send = jest.fn();
+  public sendSync = jest.fn();
   public invoke = jest.fn();
+}
+
+export class ContextBridgeMock {
+  public exposeInMainWorld = jest.fn();
 }
 
 function CreateWindowStub() {
@@ -160,12 +181,12 @@ const electronMock = {
     writeText: jest.fn(),
     writeImage: jest.fn(),
   },
+  contextBridge: new ContextBridgeMock(),
   crashReporter: {
     start: jest.fn(),
   },
   dialog: {
     showOpenDialog: jest.fn().mockResolvedValue({}),
-    showOpenDialogSync: jest.fn().mockReturnValue(['path']),
     showMessageBox: jest.fn().mockResolvedValue({}),
   },
   ipcMain: new IPCMainMock(),
@@ -181,6 +202,7 @@ const electronMock = {
   match: jest.fn(),
   Menu: MenuMock,
   MenuItem: MenuItemMock,
+  MessageChannelMain: MessageChannelMainMock,
   Notification: NotificationMock,
   _notifications: createdNotifications,
   protocol: {

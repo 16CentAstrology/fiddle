@@ -9,9 +9,9 @@ import {
   MosaicParent,
 } from 'react-mosaic-component';
 
+import { WrapperEditorId } from './output-editors-wrapper';
 import { OutputEntry } from '../../interfaces';
 import { AppState } from '../state';
-import { WrapperEditorId } from './output-editors-wrapper';
 
 interface CommandsProps {
   readonly appState: AppState;
@@ -24,9 +24,6 @@ interface CommandsProps {
 /**
  * This component represents the "console" that is shown
  * whenever a Fiddle is launched in Electron.
- *
- * @class Output
- * @extends {React.Component<CommandsProps>}
  */
 export const Output = observer(
   class Output extends React.Component<CommandsProps> {
@@ -78,16 +75,22 @@ export const Output = observer(
       const ref = this.outputRef.current;
       if (ref) {
         this.setupCustomOutputEditorLanguage(monaco);
-        this.editor = monaco.editor.create(ref, {
-          language: this.language,
-          theme: 'main',
-          readOnly: true,
-          contextmenu: false,
-          automaticLayout: true,
-          model: this.model,
-          ...monacoOptions,
-          wordWrap: 'on',
-        });
+        this.editor = monaco.editor.create(
+          ref,
+          {
+            language: this.language,
+            theme: 'main',
+            readOnly: true,
+            contextmenu: false,
+            automaticLayout: true,
+            model: this.model,
+            ...monacoOptions,
+            wordWrap: 'on',
+          },
+          {
+            openerService: this.openerService(),
+          },
+        );
       }
     }
 
@@ -108,7 +111,7 @@ export const Output = observer(
        * or a leaf. Leaf nodes are represented by the string value of their ID,
        * whereas parent nodes are objects containing information about the nested
        * binary tree.
-       * @param node A react-mosaic node
+       * @param node - A react-mosaic node
        * @returns Whether that node is a MosaicParent or not
        */
       const isParentNode = (
@@ -152,9 +155,6 @@ export const Output = observer(
 
     /**
      * Sets the model and content on the editor
-     *
-     * @private
-     * @memberof Output
      */
     private async updateModel() {
       // set the lines
@@ -175,9 +175,8 @@ export const Output = observer(
      * An OutputEntry might span multiple lines.
      * Split it into individual lines to ensure each one has a timestamp.
      *
-     * @param {OutputEntry} entries that may include paragraphs
-     * @returns {OutputEntry} single-line entries
-     * @memberof Output
+     * @param entries - that may include paragraphs
+     * @returns single-line entries
      */
     private static getLines(paragraphs: OutputEntry[]): OutputEntry[] {
       const lines: OutputEntry[] = [];
@@ -191,6 +190,26 @@ export const Output = observer(
       }
 
       return lines;
+    }
+
+    /**
+     * Implements external url handling for Monaco.
+     */
+    private openerService() {
+      const { appState } = this.props;
+
+      return {
+        open: (url: string) => {
+          appState
+            .showConfirmDialog({
+              label: `Open ${url} in external browser?`,
+              ok: 'Open',
+            })
+            .then((open) => {
+              if (open) window.open(url);
+            });
+        },
+      };
     }
 
     public render(): JSX.Element | null {

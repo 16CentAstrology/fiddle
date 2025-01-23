@@ -1,40 +1,47 @@
 import * as React from 'react';
 
-import * as path from 'path';
-
-import { shell } from 'electron';
 import { shallow } from 'enzyme';
-import * as fs from 'fs-extra';
+import { mocked } from 'jest-mock';
 
 import { AddThemeDialog } from '../../../src/renderer/components/dialog-add-theme';
-import {
-  LoadedFiddleTheme,
-  defaultLight,
-} from '../../../src/renderer/themes-defaults';
-import { StateMock } from '../../mocks/mocks';
-import { overridePlatform, resetPlatform } from '../../utils';
+import { AppState } from '../../../src/renderer/state';
+import { LoadedFiddleTheme, defaultLight } from '../../../src/themes-defaults';
+import { overrideRendererPlatform } from '../../utils';
 
-jest.mock('../../../src/renderer/ipc');
+class FileMock extends Blob {
+  public lastModified: number;
+  public webkitRelativePath: string;
+
+  constructor(
+    private bits: string[],
+    public name: string,
+    public path: string,
+    type: string,
+  ) {
+    super(bits, { type });
+    this.lastModified = Date.now();
+    this.webkitRelativePath = '';
+  }
+
+  async text() {
+    return this.bits.join('');
+  }
+}
 
 describe('AddThemeDialog component', () => {
-  let store: StateMock;
-
-  beforeAll(() => {
-    // We render the buttons different depending on the
-    // platform, so let' have a uniform platform for unit tests
-    overridePlatform('darwin');
-  });
-
-  afterAll(() => {
-    resetPlatform();
-  });
+  let store: AppState;
 
   beforeEach(() => {
-    ({ state: store } = (window as any).ElectronFiddle.app);
+    // We render the buttons different depending on the
+    // platform, so let' have a uniform platform for unit tests
+    overrideRendererPlatform('darwin');
+
+    ({ state: store } = window.app);
   });
 
+  // TODO(dsanders11): Update this test to be accurate
   it('renders', () => {
-    const wrapper = shallow(<AddThemeDialog appState={store as any} />);
+    const wrapper = shallow(<AddThemeDialog appState={store} />);
 
     wrapper.setState({
       file: '/test/file',
@@ -45,94 +52,105 @@ describe('AddThemeDialog component', () => {
 
   describe('createNewThemeFromMonaco()', () => {
     it('handles invalid input', async () => {
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
-      const instance: any = wrapper.instance() as any;
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
+      const instance: any = wrapper.instance();
 
       try {
         await instance.createNewThemeFromMonaco('', {} as LoadedFiddleTheme);
       } catch (err) {
         expect(err.message).toEqual(`Filename  not found`);
-        expect(fs.outputJSON).toHaveBeenCalledTimes(0);
+        expect(window.ElectronFiddle.createThemeFile).toHaveBeenCalledTimes(0);
         expect(store.setTheme).toHaveBeenCalledTimes(0);
-        expect(shell.showItemInFolder).toHaveBeenCalledTimes(0);
       }
     });
 
     it('handles valid input', async () => {
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
-      const instance: any = wrapper.instance() as any;
-      wrapper.setState({ file: '/test/file' });
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
+      const instance: any = wrapper.instance();
+      wrapper.setState({
+        file: new FileMock(
+          [JSON.stringify(defaultLight.editor)],
+          'file.json',
+          '/test/file.json',
+          'application/json',
+        ),
+      });
 
-      (fs.outputJSON as jest.Mock).mockResolvedValue({});
+      const themePath = '~/.electron-fiddle/themes/testingLight';
+      mocked(window.ElectronFiddle.createThemeFile).mockResolvedValue({
+        file: themePath,
+      } as LoadedFiddleTheme);
 
       await instance.createNewThemeFromMonaco('testingLight', defaultLight);
 
-      expect(fs.outputJSON).toHaveBeenCalled();
-
-      const args = (fs.outputJSON as jest.Mock).mock.calls[0];
-      expect(args[0].includes(`.electron-fiddle`)).toBe(true);
-      expect(args[1].name).toEqual('testingLight');
-      expect(args[1].common).toBeDefined();
-      expect(args[1].file).toBeDefined();
-
-      const themePath = path.join(
-        '~',
-        '.electron-fiddle',
-        'themes',
+      expect(window.ElectronFiddle.createThemeFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Fiddle (Light)',
+          common: expect.anything(),
+          file: 'defaultLight',
+        }),
         'testingLight',
       );
       expect(store.setTheme).toHaveBeenCalledWith(themePath);
-      expect(shell.showItemInFolder).toHaveBeenCalledWith(themePath);
     });
   });
 
   describe('onSubmit()', () => {
     it('does nothing if there is no file currently set', async () => {
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
-      const instance: any = wrapper.instance() as any;
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
+      const instance: any = wrapper.instance();
 
       instance.createNewThemeFromMonaco = jest.fn();
       instance.onClose = jest.fn();
 
       await instance.onSubmit();
 
-      expect(fs.readJSONSync).toHaveBeenCalledTimes(0);
       expect(instance.createNewThemeFromMonaco).toHaveBeenCalledTimes(0);
       expect(instance.onClose).toHaveBeenCalledTimes(0);
     });
 
     it('loads a theme if a file is currently set', async () => {
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
-      const instance: any = wrapper.instance() as any;
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
+      const instance: any = wrapper.instance();
 
-      wrapper.setState({ file: '/test/file' });
-
-      (fs.readJSONSync as jest.Mock).mockReturnValue(defaultLight.editor);
+      const file = new FileMock(
+        [JSON.stringify(defaultLight.editor)],
+        'file.json',
+        '/test/file.json',
+        'application/json',
+      );
+      const spy = jest.spyOn(file, 'text');
+      wrapper.setState({ file });
 
       instance.createNewThemeFromMonaco = jest.fn();
       instance.onClose = jest.fn();
 
       await instance.onSubmit();
 
-      expect(fs.readJSONSync).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledTimes(1);
       expect(instance.createNewThemeFromMonaco).toHaveBeenCalledTimes(1);
       expect(instance.onClose).toHaveBeenCalledTimes(1);
     });
 
     it('shows an error dialog for a malformed theme', async () => {
       store.showErrorDialog = jest.fn().mockResolvedValueOnce(true);
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
-      const instance: any = wrapper.instance() as any;
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
+      const instance: any = wrapper.instance();
 
-      wrapper.setState({ file: '/test/file' });
-
-      (fs.readJSONSync as jest.Mock).mockReturnValue({});
+      const file = new FileMock(
+        [JSON.stringify(defaultLight.editor)],
+        'file.json',
+        '/test/file.json',
+        'application/json',
+      );
+      const spy = jest.spyOn(file, 'text').mockResolvedValue('{}');
+      wrapper.setState({ file });
 
       instance.onClose = jest.fn();
 
       await instance.onSubmit();
 
-      expect(fs.readJSONSync).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledTimes(1);
       expect(store.showErrorDialog).toHaveBeenCalledWith(
         expect.stringMatching(/file does not match specifications/i),
       );
@@ -140,22 +158,22 @@ describe('AddThemeDialog component', () => {
   });
 
   describe('onChangeFile()', () => {
-    it('handles valid input', () => {
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
+    it('handles valid input', async () => {
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
 
       const files = ['one', 'two'];
-      (wrapper.instance() as any).onChangeFile({
-        target: { files },
-      });
+      await (wrapper.instance() as any).onChangeFile({
+        target: { files } as unknown as EventTarget,
+      } as React.FormEvent<HTMLInputElement>);
       expect(wrapper.state('file')).toBe(files[0]);
     });
 
     it('handles no input', () => {
-      const wrapper = shallow(<AddThemeDialog appState={store as any} />);
+      const wrapper = shallow(<AddThemeDialog appState={store} />);
 
       (wrapper.instance() as any).onChangeFile({
-        target: { files: null },
-      });
+        target: { files: null } as unknown as EventTarget,
+      } as React.FormEvent<HTMLInputElement>);
       expect(wrapper.state('file')).toBeUndefined();
     });
   });
