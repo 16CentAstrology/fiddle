@@ -1,28 +1,23 @@
 import * as React from 'react';
 
-import { InstallState } from '@electron/fiddle-core';
 import { shallow } from 'enzyme';
 
+import { InstallState } from '../../../src/interfaces';
 import { Runner } from '../../../src/renderer/components/commands-runner';
-import { ipcRendererManager } from '../../../src/renderer/ipc';
-import { StateMock } from '../../mocks/mocks';
+import { AppState } from '../../../src/renderer/state';
 
 jest.mock('../../../src/renderer/file-manager');
-jest.mock('../../../src/renderer/npm');
-jest.mock('child_process');
-jest.mock('fs-extra');
 
 describe('Runner component', () => {
-  let store: StateMock;
+  let store: AppState;
 
   beforeEach(() => {
-    ({ state: store } = (window as any).ElectronFiddle.app);
-    ipcRendererManager.removeAllListeners();
+    ({ state: store } = window.app);
   });
 
   describe('renders', () => {
     function expectSnapshotToMatch() {
-      const wrapper = shallow(<Runner appState={store as any} />);
+      const wrapper = shallow(<Runner appState={store} />);
       expect(wrapper).toMatchSnapshot();
     }
 

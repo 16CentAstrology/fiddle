@@ -1,57 +1,88 @@
-import { IpcMainEvent, dialog } from 'electron';
+import * as path from 'node:path';
 
-import { IpcEvents } from '../ipc-events';
+import { Installer } from '@electron/fiddle-core';
+import { BrowserWindow, dialog } from 'electron';
+import * as fs from 'fs-extra';
+
 import { ipcMainManager } from './ipc';
-import { getOrCreateMainWindow } from './windows';
+import { SelectedLocalVersion } from '../interfaces';
+import { IpcEvents } from '../ipc-events';
+
+/**
+ * Build a default name for a local Electron version
+ * from its dirname.
+ * @returns human-readable local build name
+ */
+function makeLocalName(folderPath: string): string {
+  // take a dirname like '/home/username/electron/gn/main/src/out/testing'
+  // and return something like 'gn/main - testing'
+  const tokens = folderPath.split(path.sep);
+  const buildType = tokens.pop(); // e.g. 'testing' or 'release'
+  const leader = tokens
+    // remove 'src/out/' -- they are in every local build, so make poor names
+    .slice(0, -2)
+    .join(path.sep)
+    // extract about enough for the end result to be about 20 chars
+    .slice(-20 + buildType!.length)
+    // remove any fragment in case the prev slice cut in the middle of a name
+    .split(path.sep)
+    .slice(1)
+    .join(path.sep);
+  return `${leader} - ${buildType}`;
+}
+
+/**
+ * Verifies if the local electron path is valid
+ */
+function isValidElectronPath(folderPath: string): boolean {
+  const execPath = Installer.getExecPath(folderPath);
+  return fs.existsSync(execPath);
+}
 
 /**
  * Listens to IPC events related to dialogs and message boxes
- *
- * @export
  */
 export function setupDialogs() {
-  ipcMainManager.on(IpcEvents.SHOW_WARNING_DIALOG, (_event, args) => {
-    showWarningDialog(args);
+  ipcMainManager.on(IpcEvents.SHOW_WARNING_DIALOG, (event, args) => {
+    showWarningDialog(BrowserWindow.fromWebContents(event.sender)!, args);
   });
 
-  ipcMainManager.on(IpcEvents.SHOW_CONFIRMATION_DIALOG, (_event, args) => {
-    showConfirmationDialog(args);
-  });
+  ipcMainManager.handle(
+    IpcEvents.LOAD_LOCAL_VERSION_FOLDER,
+    async (event): Promise<SelectedLocalVersion | undefined> => {
+      const folderPath = await showOpenDialog(
+        BrowserWindow.fromWebContents(event.sender)!,
+      );
 
-  ipcMainManager.on(
-    IpcEvents.SHOW_LOCAL_VERSION_FOLDER_DIALOG,
-    async (event) => {
-      await showOpenDialog(event);
+      if (folderPath) {
+        const isValidElectron = isValidElectronPath(folderPath);
+        const localName = isValidElectron
+          ? makeLocalName(folderPath)
+          : undefined;
+
+        return { folderPath, isValidElectron, localName };
+      }
+
+      return undefined;
     },
   );
 }
 
 /**
  * Shows a warning dialog
- *
- * @param {Electron.MessageBoxOptions} args
  */
-function showWarningDialog(args: Electron.MessageBoxOptions) {
-  dialog.showMessageBox(getOrCreateMainWindow(), {
+function showWarningDialog(
+  window: BrowserWindow,
+  args: Electron.MessageBoxOptions,
+) {
+  dialog.showMessageBox(window, {
     type: 'warning',
     ...args,
   });
 }
 
-/**
- * Shows a confirmation dialog
- *
- * @param {Electron.MessageBoxOptions} args
- */
-function showConfirmationDialog(args: Electron.MessageBoxOptions) {
-  dialog.showMessageBox(getOrCreateMainWindow(), {
-    type: 'warning',
-    ...args,
-  });
-}
-
-async function showOpenDialog(event: IpcMainEvent) {
-  const { filePaths } = await dialog.showOpenDialog({
+async function showOpenDialog(window: BrowserWindow) {
+  const { filePaths } = await dialog.showOpenDialog(window, {
     title: 'Open Folder',
     properties: ['openDirectory'],
   });
@@ -60,5 +91,5 @@ async function showOpenDialog(event: IpcMainEvent) {
     return;
   }
 
-  event.reply(IpcEvents.LOAD_LOCAL_VERSION_FOLDER, [filePaths[0]]);
+  return filePaths[0];
 }

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
 
 export class WebContentsMock extends EventEmitter {
   public static fromId = jest.fn();
@@ -43,6 +43,7 @@ export class WebContentsMock extends EventEmitter {
   public inspectServiceWorker = jest.fn();
   public invalidate = jest.fn();
   public isCrashed = jest.fn();
+  public isDestroyed = jest.fn();
   public isDevToolsFocused = jest.fn();
   public isDevToolsOpened = jest.fn();
   public isLoading = jest.fn();
@@ -54,6 +55,7 @@ export class WebContentsMock extends EventEmitter {
   public openDevTools = jest.fn();
   public paste = jest.fn();
   public pasteAndMatchStyle = jest.fn();
+  public postMessage = jest.fn();
   public print = jest.fn();
   public printToPDF = jest.fn();
   public redo = jest.fn();

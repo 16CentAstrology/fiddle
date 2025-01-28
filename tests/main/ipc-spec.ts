@@ -3,6 +3,7 @@
  */
 
 import * as electron from 'electron';
+import { mocked } from 'jest-mock';
 
 import { IpcEvents } from '../../src/ipc-events';
 import { ipcMainManager } from '../../src/main/ipc';
@@ -26,20 +27,21 @@ describe('IpcMainManager', () => {
   });
 
   describe('send()', () => {
-    it('sends an event and finds the main window', () => {
+    it('sends an event and finds the main window', async () => {
       const mockTarget = {
         webContents: {
           send: jest.fn(),
           isDestroyed: () => false,
-        },
-      };
+        } as unknown as Electron.WebContents,
+      } as electron.BrowserWindow;
 
-      (getOrCreateMainWindow as jest.Mock<any>).mockReturnValue(mockTarget);
-      ipcMainManager.readyWebContents.add(mockTarget.webContents as any);
+      mocked(getOrCreateMainWindow).mockResolvedValue(mockTarget);
+      ipcMainManager.readyWebContents.add(mockTarget.webContents);
 
       ipcMainManager.send(IpcEvents.FIDDLE_RUN);
+      await new Promise(process.nextTick);
 
-      expect(mockTarget.webContents.send).toHaveBeenCalledWith<any>(
+      expect(mockTarget.webContents.send).toHaveBeenCalledWith(
         IpcEvents.FIDDLE_RUN,
       );
     });
@@ -48,24 +50,24 @@ describe('IpcMainManager', () => {
       const mockTarget = {
         send: jest.fn(),
         isDestroyed: () => false,
-      };
+      } as unknown as Electron.WebContents;
 
-      (getOrCreateMainWindow as jest.Mock<any>).mockReturnValue(null);
-      ipcMainManager.readyWebContents.add(mockTarget as any);
+      mocked(getOrCreateMainWindow).mockResolvedValue(null as any);
+      ipcMainManager.readyWebContents.add(mockTarget);
 
-      ipcMainManager.send(IpcEvents.FIDDLE_RUN, undefined, mockTarget as any);
+      ipcMainManager.send(IpcEvents.FIDDLE_RUN, undefined, mockTarget);
 
-      expect(mockTarget.send).toHaveBeenCalledWith<any>(IpcEvents.FIDDLE_RUN);
+      expect(mockTarget.send).toHaveBeenCalledWith(IpcEvents.FIDDLE_RUN);
     });
 
     it('does not send an event to a target window if it is not ready', () => {
       const mockTarget = {
         send: jest.fn(),
-      };
+      } as unknown as Electron.WebContents;
 
-      (getOrCreateMainWindow as jest.Mock<any>).mockReturnValue(null);
+      mocked(getOrCreateMainWindow).mockResolvedValue(null as any);
 
-      ipcMainManager.send(IpcEvents.FIDDLE_RUN, undefined, mockTarget as any);
+      ipcMainManager.send(IpcEvents.FIDDLE_RUN, undefined, mockTarget);
 
       expect(mockTarget.send).toHaveBeenCalledTimes(0);
     });

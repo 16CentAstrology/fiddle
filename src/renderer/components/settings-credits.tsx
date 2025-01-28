@@ -1,7 +1,6 @@
 import * as React from 'react';
 
 import { Callout, Card } from '@blueprintjs/core';
-import { shell } from 'electron';
 
 import { Contributor } from 'src/interfaces';
 
@@ -18,9 +17,6 @@ interface CreditsSettingsState {
 
 /**
  * Settings content to manage Credits-related preferences.
- *
- * @class CreditsSettings
- * @extends {React.Component<CreditsSettingsProps, CreditsSettingsState>}
  */
 export class CreditsSettings extends React.Component<
   CreditsSettingsProps,
@@ -36,8 +32,6 @@ export class CreditsSettings extends React.Component<
 
   /**
    * Renders a list of contributors of Electron Fiddle.
-   *
-   * @returns {Array<JSX.Element>}
    */
   public renderContributors(): Array<JSX.Element> {
     const { contributors } = this.state;
@@ -50,7 +44,7 @@ export class CreditsSettings extends React.Component<
       const style: React.CSSProperties = {
         backgroundImage: `url(${avatar})`,
       };
-      const onClick = () => shell.openExternal(url);
+      const onClick = () => window.open(url);
 
       return (
         <Card

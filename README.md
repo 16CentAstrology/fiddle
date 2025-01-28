@@ -1,5 +1,6 @@
 # <img src="https://user-images.githubusercontent.com/378023/49785546-4b7f7000-fd64-11e8-8033-a52c73a07fbf.png" width="60px" align="center" alt="Electron Fiddle icon"> Electron Fiddle
 
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/electron/fiddle/tree/main.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/electron/fiddle/tree/main)
 [![Coverage Status](https://coveralls.io/repos/github/electron/fiddle/badge.svg?branch=main)](https://coveralls.io/github/electron/fiddle?branch=main)
 [![Electron Discord Invite](https://img.shields.io/discord/745037351163527189?color=%237289DA&label=chat&logo=discord&logoColor=white)](https://discord.com/invite/APGC3k5yaH)
 
@@ -11,7 +12,6 @@ on GitHub, anyone can quickly try your Fiddle out by just entering it in the
 address bar.
 
 **[Download Fiddle now!](https://www.electronjs.org/fiddle)**
-
 
 <img src="https://user-images.githubusercontent.com/8198408/183111969-f25e202f-b7d8-45d2-ae89-89df965c6c8f.png" width="880px" alt="Electron Fiddle screenshot">
 
@@ -65,6 +65,6 @@ Electron Fiddle is a community-driven project that welcomes all sorts of contrib
 When using the Electron or other GitHub logos, be sure to follow the [GitHub
 logo guidelines](https://github.com/logos).
 
-[BrowserView]: https://electronjs.org/docs/api/browser-view
-[desktopCapturer]: https://electronjs.org/docs/api/desktop-capturer
+[BrowserView]: https://electronjs.org/docs/latest/api/browser-view
+[desktopCapturer]: https://electronjs.org/docs/latest/api/desktop-capturer
 [electron-forge]:  https://electronforge.io/

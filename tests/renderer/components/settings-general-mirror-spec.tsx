@@ -1,28 +1,27 @@
 import * as React from 'react';
-import { FormEvent } from 'react';
 
 import { InputGroup, Radio } from '@blueprintjs/core';
 import { shallow } from 'enzyme';
 
 import { MirrorSettings } from '../../../src/renderer/components/settings-general-mirror';
-import { StateMock } from '../../mocks/mocks';
+import { AppState } from '../../../src/renderer/state';
 
 describe('MirrorSettings component', () => {
-  let store: StateMock;
+  let store: AppState;
 
   beforeEach(() => {
-    ({ state: store } = (window as any).ElectronFiddle.app);
+    ({ state: store } = window.app);
   });
 
   it('renders', () => {
-    const wrapper = shallow(<MirrorSettings appState={store as any} />);
+    const wrapper = shallow(<MirrorSettings appState={store} />);
     expect(wrapper).toMatchSnapshot();
   });
 
   describe('modifyMirror()', () => {
     it('modify mirror', async () => {
-      const wrapper = shallow(<MirrorSettings appState={store as any} />);
-      const instance = wrapper.instance() as any;
+      const wrapper = shallow(<MirrorSettings appState={store} />);
+      const instance: any = wrapper.instance();
 
       const [mirror, nightlyMirror] = ['mirror_test1', 'nightly_test2'];
 
@@ -41,13 +40,13 @@ describe('MirrorSettings component', () => {
 
   describe('changeSourceType()', () => {
     it('change source type', () => {
-      const wrapper = shallow(<MirrorSettings appState={store as any} />);
-      const instance = wrapper.instance() as any;
+      const wrapper = shallow(<MirrorSettings appState={store} />);
+      const instance: any = wrapper.instance();
 
       store.electronMirror.sourceType = 'DEFAULT';
       const event = { target: { value: 'CUSTOM' } };
       instance.changeSourceType(
-        (event as unknown) as FormEvent<HTMLInputElement>,
+        event as unknown as React.FormEvent<HTMLInputElement>,
       );
 
       expect(store.electronMirror.sourceType).toEqual('CUSTOM');
@@ -56,13 +55,13 @@ describe('MirrorSettings component', () => {
 
   describe('radio', () => {
     it('count should is 3', () => {
-      const wrapper = shallow(<MirrorSettings appState={store as any} />);
+      const wrapper = shallow(<MirrorSettings appState={store} />);
 
       expect(wrapper.find(Radio)).toHaveLength(3);
     });
 
     it('order should is default -> china -> custom', () => {
-      const wrapper = shallow(<MirrorSettings appState={store as any} />);
+      const wrapper = shallow(<MirrorSettings appState={store} />);
 
       expect(wrapper.find(Radio).at(0).props().label).toEqual('Default');
       expect(wrapper.find(Radio).at(0).props().value).toEqual('DEFAULT');
@@ -77,7 +76,7 @@ describe('MirrorSettings component', () => {
 
   describe('onClick()', () => {
     it('change electron mirror', () => {
-      const wrapper = shallow(<MirrorSettings appState={store as any} />);
+      const wrapper = shallow(<MirrorSettings appState={store} />);
 
       store.electronMirror.sourceType = 'CUSTOM';
 
@@ -90,7 +89,7 @@ describe('MirrorSettings component', () => {
     });
 
     it('change electron nightly mirror', () => {
-      const wrapper = shallow(<MirrorSettings appState={store as any} />);
+      const wrapper = shallow(<MirrorSettings appState={store} />);
 
       store.electronMirror.sourceType = 'CUSTOM';
 

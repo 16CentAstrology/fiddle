@@ -1,12 +1,13 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import { app } from 'electron';
 
-import { IpcEvents } from '../ipc-events';
-import { isDevMode } from '../utils/devmode';
+import { openFiddle } from './files';
 import { ipcMainManager } from './ipc';
+import { isDevMode } from './utils/devmode';
 import { getOrCreateMainWindow } from './windows';
+import { IpcEvents } from '../ipc-events';
 
 const PROTOCOL = 'electron-fiddle';
 const squirrelPath = path.resolve(
@@ -48,14 +49,14 @@ const handlePotentialProtocolLaunch = (url: string) => {
         return;
       }
       break;
-    // electron-fiddle://electron/{ref}/{path}
+    // electron-fiddle://electron/{tag}/{path}
     case 'electron':
       if (pathParts.length > 1) {
-        // First part of the commit HASH / ref / branch
+        // First part is the tag name (e.g. v22.0.0)
         // Rest is the path to the example
         ipcMainManager.send(IpcEvents.LOAD_ELECTRON_EXAMPLE_REQUEST, [
           {
-            ref: pathParts[0],
+            tag: pathParts[0],
             path: pathParts.slice(1).join('/'),
           },
         ]);
@@ -67,7 +68,7 @@ const handlePotentialProtocolLaunch = (url: string) => {
     default:
       return;
   }
-  getOrCreateMainWindow().focus();
+  getOrCreateMainWindow().then((window) => window.focus());
 };
 
 const isProtocolString = (arg: string) => arg.startsWith(`${PROTOCOL}://`);
@@ -107,11 +108,12 @@ export const listenForProtocolHandler = () => {
     scanArgv(commandLine);
   });
 
-  app.on('open-file', (_, path) => {
+  app.on('open-file', async (_, path) => {
     if (!path || path.length < 1) {
       return;
     }
-    ipcMainManager.send(IpcEvents.FS_OPEN_FIDDLE, [path]);
+    const files = await openFiddle(path);
+    ipcMainManager.send(IpcEvents.FS_OPEN_FIDDLE, [path, files]);
   });
 
   // pass protocol URL via npm start args in dev mode

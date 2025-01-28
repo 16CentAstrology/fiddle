@@ -4,27 +4,26 @@ import {
   Button,
   ButtonGroupProps,
   ContextMenu,
+  IconName,
   Intent,
   Menu,
   MenuItem,
-  Tooltip,
 } from '@blueprintjs/core';
+import { Tooltip2 } from '@blueprintjs/popover2';
 import {
   ItemListPredicate,
   ItemListRenderer,
   ItemRenderer,
   Select,
 } from '@blueprintjs/select';
-import { InstallState } from '@electron/fiddle-core';
-import { clipboard } from 'electron';
 import { observer } from 'mobx-react';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
 import semver from 'semver';
 
-import { RunnableVersion, VersionSource } from '../../interfaces';
-import { disableDownload } from '../../utils/disable-download';
-import { highlightText } from '../../utils/highlight-text';
+import { InstallState, RunnableVersion, VersionSource } from '../../interfaces';
 import { AppState } from '../state';
+import { disableDownload } from '../utils/disable-download';
+import { highlightText } from '../utils/highlight-text';
 
 const ElectronVersionSelect = Select.ofType<RunnableVersion>();
 
@@ -62,50 +61,42 @@ const itemListRenderer: ItemListRenderer<RunnableVersion> = ({
 /**
  * Helper method: Returns the <Select /> label for an Electron
  * version.
- *
- * @param {RunnableVersion} { source, state, name }
- * @returns {string}
  */
 export function getItemLabel({ source, state, name }: RunnableVersion): string {
-  let label = '';
-
+  // If a version is local, either it's there or it's not.
   if (source === VersionSource.local) {
-    label = name || 'Local';
-  } else {
-    if (state === InstallState.missing) {
-      label = `Not downloaded`;
-    } else if (
-      state === InstallState.installed ||
-      state === InstallState.downloaded
-    ) {
-      label = `Downloaded`;
-    } else if (state === InstallState.downloading) {
-      label = `Downloading`;
-    }
+    return state === InstallState.missing ? 'Unavailable' : name || 'Local';
   }
 
-  return label;
+  const installStateLabels: Record<InstallState, string> = {
+    missing: 'Not Downloaded',
+    downloading: 'Downloading',
+    downloaded: 'Downloaded',
+    installing: 'Downloaded',
+    installed: 'Downloaded',
+  } as const;
+  return installStateLabels[state] || '';
 }
 
 /**
  * Helper method: Returns the <Select /> icon for an Electron
  * version.
- *
- * @param {RunnableVersion} { state }
- * @returns
  */
-export function getItemIcon({ state }: RunnableVersion) {
-  switch (state) {
-    case InstallState.missing:
-      return 'cloud';
-    case InstallState.installing:
-      return 'compressed';
-    case InstallState.installed:
-    case InstallState.downloaded:
-      return 'saved';
-    case InstallState.downloading:
-      return 'cloud-download';
+export function getItemIcon({ source, state }: RunnableVersion): IconName {
+  // If a version is local, either it's there or it's not.
+  if (source === VersionSource.local) {
+    return state === InstallState.missing ? 'issue' : 'saved';
   }
+
+  const installStateIcons: Record<InstallState, IconName> = {
+    missing: 'cloud',
+    downloading: 'cloud-download',
+    downloaded: 'compressed',
+    installing: 'compressed',
+    installed: 'saved',
+  } as const;
+
+  return installStateIcons[state] || '';
 }
 
 /**
@@ -117,10 +108,6 @@ export function getItemIcon({ state }: RunnableVersion) {
  * [3.0.0, 14.3.0, 13.2.0, 12.0.0-nightly.20210301, 12.0.0-beta.3]
  * and a search query of '3', this method would sort them into:
  * [3.0.0, 13.2.0, 14.3.0, 12.0.0-beta.3, 12.0.0-nightly.20210301]
- *
- * @param {string} query
- * @param {RunnableVersion[]} versions
- * @returns
  */
 export const filterItems: ItemListPredicate<RunnableVersion> = (
   query,
@@ -156,8 +143,7 @@ export const filterItems: ItemListPredicate<RunnableVersion> = (
 /**
  * Renders a context menu to copy the current Electron version.
  *
- * @param {React.MouseEvent<HTMLButtonElement>} e
- * @param {string} version the Electron version number to copy.
+ * @param version - the Electron version number to copy.
  */
 export const renderVersionContextMenu = (
   e: React.MouseEvent<HTMLButtonElement>,
@@ -170,7 +156,7 @@ export const renderVersionContextMenu = (
       <MenuItem
         text="Copy Version Number"
         onClick={() => {
-          clipboard.writeText(version);
+          navigator.clipboard.writeText(version);
         }}
       />
     </Menu>,
@@ -181,10 +167,6 @@ export const renderVersionContextMenu = (
 /**
  * Helper method: Returns the <Select /> <MenuItem /> for Electron
  * versions.
- *
- * @param {RunnableVersion} item
- * @param {IItemRendererProps} { handleClick, modifiers, query }
- * @returns
  */
 export const renderItem: ItemRenderer<RunnableVersion> = (
   item,
@@ -196,7 +178,7 @@ export const renderItem: ItemRenderer<RunnableVersion> = (
 
   if (disableDownload(item.version)) {
     return (
-      <Tooltip
+      <Tooltip2
         className="disabled-menu-tooltip"
         modifiers={{
           flip: { enabled: false },
@@ -208,13 +190,14 @@ export const renderItem: ItemRenderer<RunnableVersion> = (
       >
         <MenuItem
           active={modifiers.active}
+          data-testid="disabled-menu-item"
           disabled={true}
           text={highlightText(item.version, query)}
           key={item.version}
           label={getItemLabel(item)}
           icon={getItemIcon(item)}
         />
-      </Tooltip>
+      </Tooltip2>
     );
   }
 
@@ -249,9 +232,6 @@ interface VersionSelectProps {
 /**
  * A dropdown allowing the selection of Electron versions. The actual
  * download is managed in the state.
- *
- * @class VersionSelect
- * @extends {React.Component<VersionSelectProps, VersionSelectState>}
  */
 export const VersionSelect = observer(
   class VersionSelect extends React.Component<
@@ -275,7 +255,7 @@ export const VersionSelect = observer(
           disabled={!!this.props.disabled}
         >
           <Button
-            className="version-chooser"
+            id="version-chooser"
             text={`Electron v${version}`}
             icon={getItemIcon(currentVersion)}
             onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => {

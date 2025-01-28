@@ -3,8 +3,6 @@ import * as React from 'react';
 import { Button, Callout, FormGroup, InputGroup } from '@blueprintjs/core';
 import { observer } from 'mobx-react';
 
-import { IpcEvents } from '../../ipc-events';
-import { ipcRendererManager } from '../ipc';
 import { AppState } from '../state';
 
 interface FontSettingsProps {
@@ -18,9 +16,6 @@ interface FontSettingsState {
 
 /**
  * Settings font family and size.
- *
- * @class FontSettings
- * @extends {React.Component<FontSettingsProps, FontSettingsState>}
  */
 @observer
 export class FontSettings extends React.Component<
@@ -41,8 +36,6 @@ export class FontSettings extends React.Component<
 
   /**
    * Handles a change in the editor font family.
-   *
-   * @param {React.FormEvent<HTMLInputElement>} event
    */
   public handleSetFontFamily(event: React.FormEvent<HTMLInputElement>): void {
     const { value: fontFamily } = event.currentTarget;
@@ -51,21 +44,13 @@ export class FontSettings extends React.Component<
   }
 
   /**
-   * Handles a change in the editor font family.
-   *
-   * @param {React.FormEvent<HTMLInputElement>} event
+   * Handles a change in the editor font size.
    */
   public handleSetFontSize(event: React.FormEvent<HTMLInputElement>): void {
-    const fontSize = parseInt(event.currentTarget.value, 10);
+    const parsedFontSize = parseInt(event.currentTarget.value, 10);
+    const fontSize = Number.isNaN(parsedFontSize) ? undefined : parsedFontSize;
     this.setState({ fontSize });
     this.props.appState.fontSize = fontSize;
-  }
-
-  /**
-   * Reloads the BrowserWindow.
-   */
-  private reloadWindow() {
-    ipcRendererManager.send(IpcEvents.RELOAD_WINDOW);
   }
 
   public render() {
@@ -96,7 +81,7 @@ export class FontSettings extends React.Component<
               }
             />
             <Button
-              onClick={this.reloadWindow}
+              onClick={() => window.ElectronFiddle.reloadWindows()}
               icon="repeat"
               text="Reload Window"
             />

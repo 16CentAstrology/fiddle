@@ -10,17 +10,14 @@ import {
   MosaicWindowProps,
 } from 'react-mosaic-component';
 
-import { EditorId, SetFiddleOptions } from '../../interfaces';
-import { IpcEvents } from '../../ipc-events';
-import { getEditorTitle } from '../../utils/editor-utils';
-import { getAtPath, setAtPath } from '../../utils/js-path';
-import { toggleMonaco } from '../../utils/toggle-monaco';
-import { getTemplate, getTestTemplate } from '../content';
-import { ipcRendererManager } from '../ipc';
-import { AppState } from '../state';
 import { Editor } from './editor';
-import { renderNonIdealState } from './editors-non-ideal-state';
+import { RenderNonIdealState } from './editors-non-ideal-state';
 import { MaximizeButton, RemoveButton } from './editors-toolbar-button';
+import { EditorId, SetFiddleOptions } from '../../interfaces';
+import { AppState } from '../state';
+import { getEditorTitle } from '../utils/editor-utils';
+import { getAtPath, setAtPath } from '../utils/js-path';
+import { toggleMonaco } from '../utils/toggle-monaco';
 
 const defaultMonacoOptions: MonacoType.editor.IEditorOptions = {
   minimap: {
@@ -50,52 +47,50 @@ export const Editors = observer(
       this.setFocused = this.setFocused.bind(this);
 
       this.state = {
-        monaco: window.ElectronFiddle.monaco,
+        monaco: window.monaco,
         monacoOptions: defaultMonacoOptions,
       };
     }
 
     /**
      * Executed right after the component mounts. We'll setup the IPC listeners here.
-     *
-     * @memberof Editors
      */
     public async componentDidMount() {
       this.stopListening();
 
-      ipcRendererManager.on(
-        IpcEvents.MONACO_EXECUTE_COMMAND,
-        (_event, cmd: string) => {
+      window.ElectronFiddle.addEventListener(
+        'execute-monaco-command',
+        (cmd: string) => {
           this.executeCommand(cmd);
         },
       );
 
-      ipcRendererManager.on(IpcEvents.FS_NEW_FIDDLE, async (_event) => {
+      window.ElectronFiddle.addEventListener('new-fiddle', async () => {
         const { modules, version } = this.props.appState;
-        const values = await getTemplate(version);
+        const values = await window.ElectronFiddle.getTemplate(version);
         const options: SetFiddleOptions = { templateName: version };
 
         // Clear previously installed modules.
         modules.clear();
 
-        await window.ElectronFiddle.app.replaceFiddle(values, options);
+        await window.app.replaceFiddle(values, options);
       });
 
-      ipcRendererManager.on(IpcEvents.FS_NEW_TEST, async (_event) => {
-        const values = await getTestTemplate();
+      window.ElectronFiddle.addEventListener('new-test', async () => {
+        const values = await window.ElectronFiddle.getTestTemplate();
         const options: SetFiddleOptions = { templateName: 'Test' };
 
-        await window.ElectronFiddle.app.replaceFiddle(values, options);
+        await window.app.replaceFiddle(values, options);
       });
 
-      ipcRendererManager.on(
-        IpcEvents.MONACO_TOGGLE_OPTION,
-        (_event, cmd: string) => {
+      window.ElectronFiddle.addEventListener(
+        'toggle-monaco-option',
+        (cmd: string) => {
           this.toggleEditorOption(cmd);
         },
       );
 
-      ipcRendererManager.on(IpcEvents.REDO_IN_EDITOR, (_event) => {
+      window.ElectronFiddle.addEventListener('redo-in-editor', () => {
         const editor = this.props.appState.editorMosaic.focusedEditor();
         if (editor) {
           const model = editor.getModel();
@@ -103,7 +98,7 @@ export const Editors = observer(
         }
       });
 
-      ipcRendererManager.on(IpcEvents.UNDO_IN_EDITOR, (_event) => {
+      window.ElectronFiddle.addEventListener('undo-in-editor', () => {
         const editor = this.props.appState.editorMosaic.focusedEditor();
         if (editor) {
           const model = editor.getModel();
@@ -111,7 +106,7 @@ export const Editors = observer(
         }
       });
 
-      ipcRendererManager.on(IpcEvents.SELECT_ALL_IN_EDITOR, (_event) => {
+      window.ElectronFiddle.addEventListener('select-all-in-editor', () => {
         const editor = this.props.appState.editorMosaic.focusedEditor();
         if (editor) {
           const model = editor.getModel();
@@ -127,20 +122,17 @@ export const Editors = observer(
     }
 
     private stopListening() {
-      ipcRendererManager.removeAllListeners(IpcEvents.MONACO_EXECUTE_COMMAND);
-      ipcRendererManager.removeAllListeners(IpcEvents.FS_NEW_FIDDLE);
-      ipcRendererManager.removeAllListeners(IpcEvents.FS_NEW_TEST);
-      ipcRendererManager.removeAllListeners(IpcEvents.MONACO_TOGGLE_OPTION);
-      ipcRendererManager.removeAllListeners(IpcEvents.SELECT_ALL_IN_EDITOR);
-      ipcRendererManager.removeAllListeners(IpcEvents.UNDO_IN_EDITOR);
-      ipcRendererManager.removeAllListeners(IpcEvents.REDO_IN_EDITOR);
+      window.ElectronFiddle.removeAllListeners('execute-monaco-command');
+      window.ElectronFiddle.removeAllListeners('new-fiddle');
+      window.ElectronFiddle.removeAllListeners('new-test');
+      window.ElectronFiddle.removeAllListeners('toggle-monaco-option');
+      window.ElectronFiddle.removeAllListeners('select-all-in-editor');
+      window.ElectronFiddle.removeAllListeners('undo-in-editor');
+      window.ElectronFiddle.removeAllListeners('redo-in-editor');
     }
 
     /**
      * Attempt to execute a given commandId on the currently focused editor
-     *
-     * @param {string} commandId
-     * @memberof Editors
      */
     public executeCommand(commandId: string) {
       const editor = this.props.appState.editorMosaic.focusedEditor();
@@ -182,10 +174,6 @@ export const Editors = observer(
 
     /**
      * Renders the little tool bar on top of each panel
-     *
-     * @param {MosaicWindowProps<EditorId>} { title }
-     * @param {EditorId} id
-     * @returns {JSX.Element}
      */
     public renderToolbar(
       { title }: MosaicWindowProps<EditorId>,
@@ -212,10 +200,6 @@ export const Editors = observer(
 
     /**
      * Renders a Mosaic tile
-     *
-     * @param {EditorId} id
-     * @param {Array<MosaicBranch>} path
-     * @returns {JSX.Element}
      */
     public renderTile(id: EditorId, path: Array<MosaicBranch>): JSX.Element {
       const content = this.renderEditor(id);
@@ -237,10 +221,6 @@ export const Editors = observer(
 
     /**
      * Render an editor
-     *
-     * @param {EditorId} id
-     * @returns {(JSX.Element | null)}
-     * @memberof Editors
      */
     public renderEditor(id: EditorId): JSX.Element | null {
       const { appState } = this.props;
@@ -265,7 +245,7 @@ export const Editors = observer(
           className={`focused__${this.state.focused}`}
           onChange={this.onChange}
           value={editorMosaic.mosaic}
-          zeroStateView={renderNonIdealState(editorMosaic)}
+          zeroStateView={<RenderNonIdealState editorMosaic={editorMosaic} />}
           renderTile={this.renderTile}
         />
       );
@@ -273,8 +253,6 @@ export const Editors = observer(
 
     /**
      * Handles a change in the visible nodes
-     *
-     * @param {(MosaicNode<EditorId> | null)} currentNode
      */
     public onChange(currentNode: MosaicNode<EditorId> | null) {
       this.props.appState.editorMosaic.mosaic = currentNode;
@@ -284,7 +262,6 @@ export const Editors = observer(
      * Sets the currently-focused editor. This will impact the editor's
      * z-index, ensuring that its intellisense menus don't get clipped
      * by the other editor windows.
-     * @param {EditorId} id
      */
     public setFocused(id: EditorId): void {
       this.props.appState.editorMosaic.setFocusedFile(id);

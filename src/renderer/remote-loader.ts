@@ -1,25 +1,26 @@
-import { InstallState } from '@electron/fiddle-core';
 import semver from 'semver';
 
+import { ELECTRON_ORG, ELECTRON_REPO } from './constants';
+import { AppState } from './state';
+import { disableDownload } from './utils/disable-download';
+import { isKnownFile, isSupportedFile } from './utils/editor-utils';
+import { getOctokit } from './utils/octokit';
+import { getReleaseChannel } from './versions';
 import {
+  EditorId,
   EditorValues,
   ElectronReleaseChannel,
+  GenericDialogType,
+  InstallState,
   PACKAGE_NAME,
   VersionSource,
 } from '../interfaces';
-import { isKnownFile, isSupportedFile } from '../utils/editor-utils';
-import { getOctokit } from '../utils/octokit';
-import { ELECTRON_ORG, ELECTRON_REPO } from './constants';
-import { getTemplate } from './content';
-import { AppState } from './state';
-import { getReleaseChannel } from './versions';
 
 export class RemoteLoader {
   constructor(private readonly appState: AppState) {
     for (const name of [
       'fetchExampleAndLoad',
       'fetchGistAndLoad',
-      'getPackageVersionFromRef',
       'handleLoadingFailed',
       'handleLoadingSuccess',
       'loadFiddleFromElectronExample',
@@ -27,27 +28,27 @@ export class RemoteLoader {
       'setElectronVersion',
       'verifyReleaseChannelEnabled',
       'verifyRemoteLoad',
-    ]) {
+    ] as const) {
       this[name] = this[name].bind(this);
     }
   }
 
-  public async loadFiddleFromElectronExample(
-    _: any,
-    exampleInfo: { path: string; ref: string },
-  ) {
-    console.log(`Loading fiddle from Electron example`, _, exampleInfo);
-    const { path, ref } = exampleInfo;
+  public async loadFiddleFromElectronExample(exampleInfo: {
+    path: string;
+    tag: string;
+  }) {
+    console.log(`Loading fiddle from Electron example`, exampleInfo);
+    const { path, tag } = exampleInfo;
     const prettyName = path.replace('docs/fiddles/', '');
     const ok = await this.verifyRemoteLoad(
-      `'${prettyName}' example from the Electron docs for version ${ref}`,
+      `'${prettyName}' example from the Electron docs for version ${tag}`,
     );
     if (!ok) return;
 
-    this.fetchExampleAndLoad(ref, path);
+    this.fetchExampleAndLoad(tag, path);
   }
 
-  public async loadFiddleFromGist(_: any, gistInfo: { id: string }) {
+  public async loadFiddleFromGist(gistInfo: { id: string }) {
     const { id } = gistInfo;
     const ok = await this.verifyRemoteLoad(`gist`);
     if (!ok) return;
@@ -56,7 +57,7 @@ export class RemoteLoader {
   }
 
   public async fetchExampleAndLoad(
-    ref: string,
+    tag: string,
     path: string,
   ): Promise<boolean> {
     try {
@@ -64,15 +65,23 @@ export class RemoteLoader {
       const folder = await octo.repos.getContents({
         owner: ELECTRON_REPO,
         repo: ELECTRON_ORG,
-        ref,
+        ref: tag,
         path,
       });
 
-      const version = await this.getPackageVersionFromRef(ref);
+      const index = tag.search(/\d/);
+      const version = tag.substring(index);
+
+      if (!semver.valid(version)) {
+        throw new Error('Could not determine Electron version for example');
+      }
+
       const ok = await this.setElectronVersion(version);
       if (!ok) return false;
 
-      const values = await getTemplate(this.appState.version);
+      const values = await window.ElectronFiddle.getTemplate(
+        this.appState.version,
+      );
       if (!Array.isArray(folder.data)) {
         throw new Error(
           'The example Fiddle tried to launch is not a valid Electron example',
@@ -92,7 +101,7 @@ export class RemoteLoader {
             fetch(child.download_url)
               .then((r) => r.text())
               .then((t) => {
-                values[child.name] = t;
+                values[child.name as EditorId] = t;
               }),
           );
         }
@@ -116,12 +125,18 @@ export class RemoteLoader {
       const values: EditorValues = {};
 
       for (const [id, data] of Object.entries(gist.data.files)) {
+        const content = data.truncated
+          ? await fetch(data.raw_url!).then((r) => r.text())
+          : data.content!;
+
         if (id === PACKAGE_NAME) {
-          const { dependencies, devDependencies } = JSON.parse(data.content);
-          const deps: Record<string, string> = {
-            ...dependencies,
-            ...devDependencies,
-          };
+          const deps: Record<string, string> = {};
+          try {
+            const { dependencies, devDependencies } = JSON.parse(content);
+            Object.assign(deps, dependencies, devDependencies);
+          } catch (e) {
+            throw new Error('Invalid JSON found in package.json');
+          }
 
           // If the gist specifies an Electron version, we want to tell Fiddle to run
           // it with that version by default.
@@ -135,13 +150,28 @@ export class RemoteLoader {
             const index = deps[dep].search(/\d/);
             const version = deps[dep].substring(index);
 
-            if (!semver.valid(version)) {
-              throw new Error(
-                "This gist's package.json contains an invalid Electron version.",
-              );
+            if (
+              !semver.valid(version) ||
+              !(await window.ElectronFiddle.isReleasedMajor(
+                semver.major(version),
+              ))
+            ) {
+              await this.appState.showGenericDialog({
+                label: `The Electron version (${version}) in this gist's package.json is invalid. Falling back to last used version.`,
+                ok: 'Close',
+                type: GenericDialogType.warning,
+                wantsInput: false,
+              });
+            } else if (disableDownload(version)) {
+              await this.appState.showGenericDialog({
+                label: `This gist's Electron version (${version}) is not available on your current OS. Falling back to last used version.`,
+                ok: 'Close',
+                type: GenericDialogType.warning,
+                wantsInput: false,
+              });
+            } else {
+              this.setElectronVersion(version);
             }
-
-            this.setElectronVersion(version);
 
             // We want to include all dependencies except Electron.
             delete deps[dep];
@@ -150,10 +180,14 @@ export class RemoteLoader {
           this.appState.modules = new Map(Object.entries(deps));
         }
 
+        // JSON files are supported, but we don't want to add package.json
+        // or the lockfile to the visible editor array.
+        if ([PACKAGE_NAME, 'package-lock.json'].includes(id)) continue;
+
         if (!isSupportedFile(id)) continue;
 
         if (isKnownFile(id) || (await this.confirmAddFile(id))) {
-          values[id] = data.content;
+          values[id] = content;
         }
       }
 
@@ -161,7 +195,7 @@ export class RemoteLoader {
       // contain any supported files. Throw an error to let the user know.
       if (Object.keys(values).length === 0) {
         throw new Error(
-          'This Gist did not contain any supported files. Supported files must have one of the following extensions: .js, .css, or .html.',
+          'This Gist did not contain any supported files. Supported files must have one of the following extensions: .cjs, .js, .mjs, .css, or .html.',
         );
       }
 
@@ -192,9 +226,8 @@ export class RemoteLoader {
     }
 
     // check if version is part of release channel
-    const versionReleaseChannel: ElectronReleaseChannel = getReleaseChannel(
-      version,
-    );
+    const versionReleaseChannel: ElectronReleaseChannel =
+      getReleaseChannel(version);
 
     if (!this.appState.channelsToShow.includes(versionReleaseChannel)) {
       const ok = await this.verifyReleaseChannelEnabled(versionReleaseChannel);
@@ -205,34 +238,6 @@ export class RemoteLoader {
 
     this.appState.setVersion(version);
     return true;
-  }
-
-  public async getPackageVersionFromRef(ref: string): Promise<string> {
-    const octo = await getOctokit(this.appState);
-    const { data: packageJsonData } = await octo.repos.getContents({
-      owner: ELECTRON_ORG,
-      repo: ELECTRON_REPO,
-      ref,
-      path: PACKAGE_NAME,
-    });
-
-    if (!Array.isArray(packageJsonData) && !!packageJsonData.content) {
-      const packageJsonString = Buffer.from(
-        packageJsonData.content,
-        'base64',
-      ).toString('utf8');
-      const { version } = JSON.parse(packageJsonString);
-      return version;
-    } else {
-      console.error(
-        `getPackageVersionFromRef: Received unexpected response from GitHub, could not parse version`,
-        {
-          packageJsonData,
-        },
-      );
-
-      return '0.0.0';
-    }
   }
 
   public confirmAddFile = (filename: string): Promise<boolean> => {
@@ -246,7 +251,7 @@ export class RemoteLoader {
   /**
    * Verifies from the user that we should be loading this fiddle.
    *
-   * @param {string} what What are we loading from (gist, example, etc.)
+   * @param what - What are we loading from (gist, example, etc.)
    */
   public verifyRemoteLoad(what: string): Promise<boolean> {
     return this.appState.showConfirmDialog({
@@ -266,25 +271,18 @@ export class RemoteLoader {
 
   /**
    * Loading a fiddle from GitHub succeeded, let's move on.
-   *
-   * @param {EditorValues} values
-   * @param {string} gistId
-   * @returns {Promise<boolean>}
    */
   private async handleLoadingSuccess(
     values: EditorValues,
     gistId: string,
   ): Promise<boolean> {
-    await window.ElectronFiddle.app.replaceFiddle(values, { gistId });
+    await window.app.replaceFiddle(values, { gistId });
     return true;
   }
 
   /**
    * Loading a fiddle from GitHub failed - this method handles this case
    * gracefully.
-   *
-   * @param {Error} error
-   * @returns {boolean}
    */
   private handleLoadingFailed(error: Error): false {
     const failedLabel = `Loading the fiddle failed: ${error.message}`;

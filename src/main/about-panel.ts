@@ -1,4 +1,4 @@
-import * as path from 'path';
+import * as path from 'node:path';
 
 import { app } from 'electron';
 
@@ -8,8 +8,6 @@ import contributorsJSON from '../../static/contributors.json';
 
 /**
  * Sets Fiddle's About panel options on Linux and macOS
- *
- * @returns
  */
 export function setupAboutPanel(): void {
   const contributors: Array<string> = [];

@@ -1,7 +1,5 @@
 import * as React from 'react';
 
-import * as path from 'path';
-
 import {
   Button,
   Callout,
@@ -10,26 +8,19 @@ import {
   MenuItem,
 } from '@blueprintjs/core';
 import { ItemPredicate, ItemRenderer, Select } from '@blueprintjs/select';
-import { shell } from 'electron';
-import * as fs from 'fs-extra';
-import { reaction } from 'mobx';
+import { reaction, when } from 'mobx';
 import { observer } from 'mobx-react';
-import * as namor from 'namor';
 
-import { highlightText } from '../../utils/highlight-text';
+import { LoadedFiddleTheme } from '../../themes-defaults';
 import { AppState } from '../state';
-import { THEMES_PATH, getAvailableThemes, getTheme } from '../themes';
-import { LoadedFiddleTheme } from '../themes-defaults';
+import { getCurrentTheme, getTheme } from '../themes';
+import { highlightText } from '../utils/highlight-text';
 
 const ThemeSelect = Select.ofType<LoadedFiddleTheme>();
 
 /**
  * Helper method: Returns the <Select /> predicate for an Electron
  * version.
- *
- * @param {string} query
- * @param {RunnableVersion} { name }
- * @returns
  */
 export const filterItem: ItemPredicate<LoadedFiddleTheme> = (
   query,
@@ -41,10 +32,6 @@ export const filterItem: ItemPredicate<LoadedFiddleTheme> = (
 /**
  * Helper method: Returns the <Select /> <MenuItem /> for Electron
  * versions.
- *
- * @param {RunnableVersion} item
- * @param {IItemRendererProps} { handleClick, modifiers, query }
- * @returns
  */
 export const renderItem: ItemRenderer<LoadedFiddleTheme> = (
   item,
@@ -77,10 +64,7 @@ interface AppearanceSettingsState {
 }
 
 /**
- * Settings content to manage GitHub-related preferences.
- *
- * @class GitHubSettings
- * @extends {React.Component<AppearanceSettingsProps, AppearanceSettingsState>}
+ * Settings content to manage appearance-related preferences.
  */
 export const AppearanceSettings = observer(
   class AppearanceSettings extends React.Component<
@@ -99,10 +83,11 @@ export const AppearanceSettings = observer(
         themes: [],
       };
 
-      getAvailableThemes().then((themes) => {
+      window.ElectronFiddle.getAvailableThemes().then((themes) => {
         const { theme } = this.props.appState;
         const selectedTheme =
-          (theme && themes.find(({ file }) => file === theme)) || themes[0];
+          (theme && themes.find(({ file }) => file === theme)) ||
+          getCurrentTheme();
 
         this.setState({ themes, selectedTheme });
 
@@ -110,23 +95,23 @@ export const AppearanceSettings = observer(
         reaction(
           () => this.props.appState.theme,
           async () => {
-            const selectedTheme = await getTheme(this.props.appState.theme);
+            const selectedTheme = await getTheme(
+              this.props.appState,
+              this.props.appState.theme,
+            );
             this.setState({ selectedTheme });
           },
         );
       });
 
-      this.createNewThemeFromCurrent = this.createNewThemeFromCurrent.bind(
-        this,
-      );
+      this.createNewThemeFromCurrent =
+        this.createNewThemeFromCurrent.bind(this);
       this.openThemeFolder = this.openThemeFolder.bind(this);
     }
 
     /**
      * Handle change, which usually means that we'd like update
      * the current theme.
-     *
-     * @param {LoadedFiddleTheme} theme
      */
     public handleChange(theme: LoadedFiddleTheme) {
       this.setState({ selectedTheme: theme });
@@ -135,32 +120,16 @@ export const AppearanceSettings = observer(
 
     /**
      * Creates a new theme from the current template.
-     *
-     * @returns {Promise<boolean>}
-     * @memberof AppearanceSettings
      */
     public async createNewThemeFromCurrent(): Promise<boolean> {
       const { appState } = this.props;
-      const theme = await getTheme(appState.theme);
+      const theme = await getTheme(appState, appState.theme);
 
       try {
-        const name = namor.generate({ words: 2, numbers: 0 });
-        const themePath = path.join(THEMES_PATH, `${name}.json`);
-
-        await fs.outputJSON(
-          themePath,
-          {
-            ...theme,
-            name,
-            file: undefined,
-            css: undefined,
-          },
-          { spaces: 2 },
-        );
-
-        shell.showItemInFolder(themePath);
-
-        this.setState({ themes: await getAvailableThemes() });
+        await window.ElectronFiddle.createThemeFile(theme);
+        this.setState({
+          themes: await window.ElectronFiddle.getAvailableThemes(),
+        });
 
         return true;
       } catch (error) {
@@ -173,13 +142,10 @@ export const AppearanceSettings = observer(
     /**
      * Creates the themes folder in .electron-fiddle if one does not
      * exist yet, then shows that folder in the Finder/Explorer.
-     *
-     * @returns {Promise<boolean>}
      */
     public async openThemeFolder(): Promise<boolean> {
       try {
-        await fs.ensureDir(THEMES_PATH);
-        await shell.showItemInFolder(THEMES_PATH);
+        await window.ElectronFiddle.openThemeFolder();
         return true;
       } catch (error) {
         console.warn(`Appearance Settings: Could not open themes folder`);
@@ -190,8 +156,15 @@ export const AppearanceSettings = observer(
     /**
      * Opens the "add monaco theme" dialog
      */
-    public handleAddTheme(): void {
+    public async handleAddTheme(): Promise<void> {
       this.props.appState.toggleAddMonacoThemeDialog();
+
+      // Wait for the dialog to be closed again
+      await when(() => !this.props.appState.isTokenDialogShowing);
+
+      this.setState({
+        themes: await window.ElectronFiddle.getAvailableThemes(),
+      });
     }
 
     public handleThemeSource(event: React.FormEvent<HTMLInputElement>): void {
@@ -203,8 +176,7 @@ export const AppearanceSettings = observer(
     public render() {
       const { selectedTheme } = this.state;
       const { isUsingSystemTheme } = this.props.appState;
-      const selectedName =
-        (selectedTheme && selectedTheme.name) || 'Select a theme';
+      const selectedName = selectedTheme?.name || 'Select a theme';
 
       return (
         <div className="settings-appearance">
@@ -246,7 +218,7 @@ export const AppearanceSettings = observer(
             <p>
               To add themes, add JSON theme files to{' '}
               <a id="open-theme-folder" onClick={this.openThemeFolder}>
-                <code>{THEMES_PATH}</code>
+                <code>{window.ElectronFiddle.themePath}</code>
               </a>
               . The easiest way to get started is to clone one of the two
               existing themes and to add your own colors.

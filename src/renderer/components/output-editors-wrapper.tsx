@@ -1,11 +1,12 @@
 import * as React from 'react';
 
+import { reaction } from 'mobx';
 import { Mosaic, MosaicNode, MosaicParent } from 'react-mosaic-component';
 
-import { AppState } from '../state';
 import { Editors } from './editors';
 import { Outputs } from './outputs';
 import { Sidebar } from './sidebar';
+import { AppState } from '../state';
 
 interface WrapperProps {
   appState: AppState;
@@ -13,6 +14,7 @@ interface WrapperProps {
 
 interface WrapperState {
   mosaic: MosaicNode<WrapperEditorId>;
+  focusable: boolean;
 }
 
 export type WrapperEditorId = 'output' | 'editors' | 'sidebar';
@@ -41,16 +43,24 @@ export class OutputEditorsWrapper extends React.Component<
         },
         splitPercentage: 25,
       },
+      focusable: true,
     };
+    reaction(
+      () => this.props.appState.isSettingsShowing,
+      (isSettingsShowing) => this.setState({ focusable: !isSettingsShowing }),
+    );
   }
 
   public render() {
     return (
       <Mosaic<WrapperEditorId>
-        renderTile={(id: string) => this.MOSAIC_ELEMENTS[id]}
+        renderTile={(id: string) =>
+          this.MOSAIC_ELEMENTS[id as keyof typeof this.MOSAIC_ELEMENTS]
+        }
         resize={{ minimumPaneSizePercentage: 15 }}
         value={this.state.mosaic}
         onChange={this.onChange}
+        className={!this.state.focusable ? 'tabbing-hidden' : undefined}
       />
     );
   }

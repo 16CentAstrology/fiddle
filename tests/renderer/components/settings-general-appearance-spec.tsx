@@ -1,53 +1,42 @@
 import * as React from 'react';
 
 import { IItemRendererProps } from '@blueprintjs/select';
-import { shell } from 'electron';
 import { shallow } from 'enzyme';
-import * as fs from 'fs-extra';
+import { mocked } from 'jest-mock';
 
 import {
   AppearanceSettings,
   filterItem,
   renderItem,
 } from '../../../src/renderer/components/settings-general-appearance';
-import { getAvailableThemes } from '../../../src/renderer/themes';
-import { FiddleTheme } from '../../../src/renderer/themes-defaults';
-import { StateMock } from '../../mocks/mocks';
+import { AppState } from '../../../src/renderer/state';
+import { FiddleTheme, LoadedFiddleTheme } from '../../../src/themes-defaults';
 
 const mockThemes = [
   {
     name: 'defaultDark',
     file: 'defaultDark',
-  },
+  } as LoadedFiddleTheme,
 ];
 const doNothingFunc = () => {
   // Do Nothing
 };
 
-jest.mock('fs-extra');
-
-jest.mock('../../../src/renderer/themes', () => ({
-  THEMES_PATH: '~/.electron-fiddle/themes',
-  getAvailableThemes: jest.fn(),
-  getTheme: () =>
-    Promise.resolve({
-      common: {},
-    }),
-}));
-
 describe('AppearanceSettings component', () => {
-  let store: StateMock;
+  let store: AppState;
 
   beforeEach(() => {
-    ({ state: store } = (window as any).ElectronFiddle.app);
+    ({ state: store } = window.app);
 
-    (getAvailableThemes as jest.Mock).mockResolvedValue(mockThemes);
+    mocked(window.ElectronFiddle.getAvailableThemes).mockResolvedValue(
+      mockThemes,
+    );
   });
 
   it('renders', () => {
     const wrapper = shallow(
       <AppearanceSettings
-        appState={store as any}
+        appState={store}
         toggleHasPopoverOpen={doNothingFunc}
       />,
     );
@@ -59,24 +48,24 @@ describe('AppearanceSettings component', () => {
     store.theme = 'defaultDark';
     const wrapper = shallow(
       <AppearanceSettings
-        appState={store as any}
+        appState={store}
         toggleHasPopoverOpen={doNothingFunc}
       />,
     );
 
-    await process.nextTick;
-    expect((wrapper.state() as any).selectedTheme.name).toBe('defaultDark');
+    await new Promise(process.nextTick);
+    expect((wrapper.state() as any).selectedTheme?.name).toBe('defaultDark');
   });
 
   it('handles a theme change', () => {
     const wrapper = shallow(
       <AppearanceSettings
-        appState={store as any}
+        appState={store}
         toggleHasPopoverOpen={doNothingFunc}
       />,
     );
-    const instance: any = wrapper.instance() as any;
-    instance.handleChange({ file: 'defaultLight' } as any);
+    const instance: any = wrapper.instance();
+    instance.handleChange({ file: 'defaultLight' } as LoadedFiddleTheme);
 
     expect(store.setTheme).toHaveBeenCalledWith('defaultLight');
   });
@@ -84,10 +73,7 @@ describe('AppearanceSettings component', () => {
   it('toggles popover toggle event', () => {
     const toggleFunc = jest.fn();
     const wrapper = shallow(
-      <AppearanceSettings
-        appState={store as any}
-        toggleHasPopoverOpen={toggleFunc}
-      />,
+      <AppearanceSettings appState={store} toggleHasPopoverOpen={toggleFunc} />,
     );
 
     // Find the button
@@ -106,27 +92,27 @@ describe('AppearanceSettings component', () => {
     it('attempts to open the folder', async () => {
       const wrapper = shallow(
         <AppearanceSettings
-          appState={store as any}
+          appState={store}
           toggleHasPopoverOpen={doNothingFunc}
         />,
       );
-      const instance: any = wrapper.instance() as any;
+      const instance: any = wrapper.instance();
       await instance.openThemeFolder();
 
-      expect(shell.showItemInFolder).toHaveBeenCalled();
+      expect(window.ElectronFiddle.openThemeFolder).toHaveBeenCalled();
     });
 
     it('handles an error', async () => {
       const wrapper = shallow(
         <AppearanceSettings
-          appState={store as any}
+          appState={store}
           toggleHasPopoverOpen={doNothingFunc}
         />,
       );
-      const instance: any = wrapper.instance() as any;
-      (shell as any).showItemInFolder.mockImplementationOnce(() => {
-        throw new Error('Bwap');
-      });
+      const instance: any = wrapper.instance();
+      mocked(window.ElectronFiddle.openThemeFolder).mockRejectedValue(
+        new Error('Bwap'),
+      );
 
       expect(await instance.openThemeFolder()).toBe(false);
     });
@@ -136,40 +122,42 @@ describe('AppearanceSettings component', () => {
     it('creates a new file from the current theme', async () => {
       const wrapper = shallow(
         <AppearanceSettings
-          appState={store as any}
+          appState={store}
           toggleHasPopoverOpen={doNothingFunc}
         />,
       );
-      const instance: any = wrapper.instance() as any;
+      const instance: any = wrapper.instance();
       await instance.createNewThemeFromCurrent();
 
-      expect(shell.showItemInFolder).toHaveBeenCalled();
-      expect(fs.outputJSON).toHaveBeenCalled();
-
-      const args = (fs.outputJSON as jest.Mock).mock.calls[0];
-      expect(args[0].includes(`.electron-fiddle`)).toBe(true);
-      expect(args[1].name).toBeDefined();
-      expect(args[1].name === 'defaultDark').toBe(false);
-      expect(args[1].common).toBeDefined();
-      expect(args[1].file).toBeUndefined();
+      expect(window.ElectronFiddle.createThemeFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          common: expect.anything(),
+        }),
+      );
     });
 
     it('adds the newly created theme to the Themes dropdown', async () => {
-      const arr: Array<FiddleTheme> = [];
-      (getAvailableThemes as jest.Mock).mockResolvedValue(arr);
-      (fs.outputJSON as jest.Mock).mockImplementation(
-        (_, theme: FiddleTheme) => {
-          arr.push(theme);
+      const arr: Array<LoadedFiddleTheme> = [];
+      mocked(window.ElectronFiddle.getAvailableThemes).mockResolvedValue(arr);
+      mocked(window.ElectronFiddle.createThemeFile).mockImplementation(
+        async (theme: FiddleTheme) => {
+          const loadedTheme = {
+            ...theme,
+            name: '',
+            file: '',
+          };
+          arr.push(loadedTheme);
+          return loadedTheme;
         },
       );
       const wrapper = shallow(
         <AppearanceSettings
-          appState={store as any}
+          appState={store}
           toggleHasPopoverOpen={doNothingFunc}
         />,
       );
       expect(wrapper.state('themes')).toHaveLength(0);
-      const instance: any = wrapper.instance() as any;
+      const instance: any = wrapper.instance();
       await instance.createNewThemeFromCurrent();
       expect(wrapper.state('themes')).toHaveLength(1);
     });
@@ -177,26 +165,45 @@ describe('AppearanceSettings component', () => {
     it('handles an error', async () => {
       const wrapper = shallow(
         <AppearanceSettings
-          appState={store as any}
+          appState={store}
           toggleHasPopoverOpen={doNothingFunc}
         />,
       );
-      const instance: any = wrapper.instance() as any;
-      (shell as any).showItemInFolder.mockImplementationOnce(() => {
-        throw new Error('Bwap');
-      });
+      const instance: any = wrapper.instance();
+      mocked(window.ElectronFiddle.createThemeFile).mockRejectedValue(
+        new Error('Bwap'),
+      );
 
       const result = await instance.createNewThemeFromCurrent();
       expect(result).toBe(false);
     });
   });
 
+  describe('handleAddTheme()', () => {
+    it('refreshes the Themes dropdown', async () => {
+      const arr: Array<LoadedFiddleTheme> = [];
+      mocked(window.ElectronFiddle.getAvailableThemes).mockResolvedValue(arr);
+      const wrapper = shallow(
+        <AppearanceSettings
+          appState={store}
+          toggleHasPopoverOpen={doNothingFunc}
+        />,
+      );
+      expect(window.ElectronFiddle.getAvailableThemes).toHaveBeenCalledTimes(1);
+      const instance: any = wrapper.instance();
+      const promise = instance.handleAddTheme();
+      store.isTokenDialogShowing = false;
+      await promise;
+      expect(window.ElectronFiddle.getAvailableThemes).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('filterItem()', () => {
     it('filters', () => {
-      const foo = filterItem('foo', { name: 'foo' } as any);
+      const foo = filterItem('foo', { name: 'foo' } as LoadedFiddleTheme);
       expect(foo).toBe(true);
 
-      const bar = filterItem('foo', { name: 'bar' } as any);
+      const bar = filterItem('foo', { name: 'bar' } as LoadedFiddleTheme);
       expect(bar).toBe(false);
     });
   });
@@ -214,7 +221,7 @@ describe('AppearanceSettings component', () => {
     };
 
     it('returns null for non-matching', () => {
-      const result = renderItem({ name: 'foo' } as any, {
+      const result = renderItem({ name: 'foo' } as LoadedFiddleTheme, {
         ...mockItemProps,
         modifiers: {
           ...mockItemProps.modifiers,
@@ -226,7 +233,7 @@ describe('AppearanceSettings component', () => {
     });
 
     it('returns a MenuItem for matching', () => {
-      const result = renderItem({ name: 'foo' } as any, {
+      const result = renderItem({ name: 'foo' } as LoadedFiddleTheme, {
         ...mockItemProps,
       });
 

@@ -2,7 +2,10 @@ import { objectDifference } from '../utils';
 
 export class MonacoModelMock {
   private options: any;
-  constructor(private value: string, private language: string) {}
+  constructor(
+    private value: string,
+    private language: string,
+  ) {}
 
   public getFullModelRange = jest.fn();
   public getValue = jest.fn(() => this.value);
@@ -69,7 +72,6 @@ export class MonacoEditorMock {
   public restoreViewState = jest.fn();
   public revealLine = jest.fn();
   public saveViewState = jest.fn();
-  public setContent = jest.fn();
   public setModel = jest.fn((model) => (this.model = model));
   public setMonarchTokensProvider = jest.fn();
   public setSelection = jest.fn();
